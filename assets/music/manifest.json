@@ -1,0 +1,71 @@
+{
+  "id": "aa4-recordings-v1",
+  "version": "逆转裁判 4",
+  "description": "Repository-owner supplied game recordings; see NOTICE.md.",
+  "tracks": [
+    {
+      "key": "aa4-bgm01",
+      "title": "开庭 · BGM01",
+      "phase": "opening",
+      "file": "aa4/bgm01.mp3",
+      "bytes": 989568,
+      "sha256": "db88572c797a9377432caa36efda2c93fa804b32c2175933eee1552a42abc763"
+    },
+    {
+      "key": "aa4-bgm03",
+      "title": "询问 · BGM03",
+      "phase": "questioning",
+      "file": "aa4/bgm03.mp3",
+      "bytes": 784512,
+      "sha256": "e810d3f40f19fff08ff6eca80596d988802bf0b94992dfb1661becbf8131fd41"
+    },
+    {
+      "key": "aa4-bgm05",
+      "title": "异议 · BGM05",
+      "phase": "objection",
+      "file": "aa4/bgm05.mp3",
+      "bytes": 937728,
+      "sha256": "2932c4c858df0728a7bf75e8270a24de1cb0618a2d9520f94309425d147beedf"
+    },
+    {
+      "key": "aa4-bgm07",
+      "title": "追求 · BGM07",
+      "phase": "pursuit",
+      "file": "aa4/bgm07.mp3",
+      "bytes": 916224,
+      "sha256": "8061dd2f418a11ee9ac0111b896d93f2ad43fc2670b4a1759b8b9877fd6212d8"
+    },
+    {
+      "key": "aa4-bgm22",
+      "title": "调查 · BGM22",
+      "phase": "investigation",
+      "file": "aa4/bgm22.mp3",
+      "bytes": 901248,
+      "sha256": "6af30ed8119cb0d868c61dbc9b531047661c8c90fdedf9fd9e8b5f0b272432f1"
+    },
+    {
+      "key": "aa4-bgm04",
+      "title": "思考 · BGM04",
+      "phase": "thinking",
+      "file": "aa4/bgm04.mp3",
+      "bytes": 843264,
+      "sha256": "99beb14f6d4c7eed78161932058c86c160f763e1a00d38fd71a86f862b02f3a7"
+    },
+    {
+      "key": "aa4-bgm16",
+      "title": "休庭 · BGM16",
+      "phase": "recess",
+      "file": "aa4/bgm16.mp3",
+      "bytes": 743424,
+      "sha256": "ecd381fc915e4a25473d0858030cee0f5fbcb6bad3e7ffc2d0f9968cbb68018d"
+    },
+    {
+      "key": "aa4-bgm09",
+      "title": "胜诉 · BGM09",
+      "phase": "victory",
+      "file": "aa4/bgm09.mp3",
+      "bytes": 794880,
+      "sha256": "8eaadb104f85f144f923aa28c38d6de9d8fb153b6557e6fa071f68688df0d9a0"
+    }
+  ]
+}

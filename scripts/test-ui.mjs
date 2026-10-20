@@ -1,0 +1,197 @@
+import { chromium } from 'playwright';
+import { spawn } from 'node:child_process';
+import { once } from 'node:events';
+import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import assert from 'node:assert/strict';
+import { fileURLToPath } from 'node:url';
+
+const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
+const port=4417, base=`http://127.0.0.1:${port}`;
+const temp=await mkdtemp(path.join(os.tmpdir(),'codex-court-browser-'));
+const results=path.join(root,'test-results');await mkdir(results,{recursive:true});
+await writeFile(path.join(results,'ui-report.json'),JSON.stringify({passed:false,status:'running',startedAt:new Date().toISOString()},null,2));
+const dataFile=path.join(temp,'isolated-court.json');
+const server=spawn(process.execPath,['server/index.mjs'],{cwd:root,env:{...process.env,PORT:String(port),COURT_TEST_MODE:'1',DATA_FILE:dataFile},stdio:['ignore','pipe','pipe'],windowsHide:true});
+const processLog=[];server.stdout.on('data',c=>processLog.push(c.toString()));server.stderr.on('data',c=>processLog.push(c.toString()));
+const errors=[];const reports=[];let context;
+function testWave() { const rate=16000,seconds=4,data=Buffer.alloc(44+rate*seconds*2);data.write('RIFF');data.writeUInt32LE(data.length-8,4);data.write('WAVEfmt ',8);data.writeUInt32LE(16,16);data.writeUInt16LE(1,20);data.writeUInt16LE(1,22);data.writeUInt32LE(rate,24);data.writeUInt32LE(rate*2,28);data.writeUInt16LE(2,32);data.writeUInt16LE(16,34);data.write('data',36);data.writeUInt32LE(data.length-44,40);for(let i=0;i<rate*seconds;i++)data.writeInt16LE(Math.round(Math.sin(i/rate*220*2*Math.PI)*800),44+i*2);return data; }
+try {
+  for(let n=0;n<80;n++){try{const r=await fetch(base+'/api/health');if(r.ok)break;}catch{}await new Promise(r=>setTimeout(r,100));if(n===79)throw new Error('test server did not start: '+processLog.join(''));}
+  assert.equal((await fetch(base+'/api/threads')).status,401);
+  assert.equal((await fetch(base+'/api/bootstrap',{headers:{Origin:'https://foreign.example'}})).status,403);
+  const browsers=[['chrome','C:/Program Files/Google/Chrome/Application/chrome.exe'],['edge','C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe']];
+  for(const [name,executablePath] of browsers) {
+    const bootstrap=await (await fetch(base+'/api/bootstrap')).json();
+    const reset=await fetch(base+'/api/test/reset',{method:'POST',headers:{'X-Court-Token':bootstrap.token}});assert.equal(reset.status,200);
+    const initialMusic=await (await fetch(base+'/api/music',{headers:{'X-Court-Token':bootstrap.token}})).json();
+    for(const track of initialMusic.tracks)await fetch(`${base}/api/music/tracks/${track.id}`,{method:'DELETE',headers:{'X-Court-Token':bootstrap.token}});
+    await fetch(base+'/api/music/settings',{method:'PATCH',headers:{'X-Court-Token':bootstrap.token,'Content-Type':'application/json'},body:JSON.stringify({enabled:false,auto:true,volume:.35,version:'逆转裁判 1'})});
+    const browserErrors=[];
+    context=await chromium.launchPersistentContext(path.join(temp,`${name}-profile`),{executablePath,headless:true,viewport:{width:1512,height:1000},deviceScaleFactor:1,locale:'zh-CN',args:['--no-first-run','--no-default-browser-check','--mute-audio']});
+    const page=await context.newPage();
+    page.on('pageerror',e=>browserErrors.push(e.message));
+    page.on('console',msg=>{if(msg.type()==='error')browserErrors.push(msg.text());});
+    await page.goto(base);await page.getByText('欢迎来到，你的辩证法庭。').waitFor();
+    await page.screenshot({path:path.join(results,`${name}-welcome.png`),fullPage:true});
+    await page.getByRole('button',{name:/练习庭 · 第一次异议/}).click();
+    await page.getByText('登录状态丢失是浏览器缓存导致的，清除缓存就能解决。',{exact:true}).waitFor();
+    await page.screenshot({path:path.join(results,`${name}-courtroom.png`),fullPage:true});
+    await page.getByRole('button',{name:/选中证言：.*登录状态丢失是浏览器缓存导致/}).click();
+    await page.getByRole('textbox',{name:'庭审陈述'}).fill('这个结论有哪些直接依据？');
+    await page.getByRole('button',{name:'发送追问',exact:true}).click();
+    await page.getByRole('button',{name:'暂停',exact:true}).waitFor({state:'visible'});
+    await page.getByText('复核结论 · 这是推测，尚未验证',{exact:true}).waitFor();
+    await page.getByRole('button',{name:'暂停',exact:true}).waitFor({state:'hidden'});
+    assert.ok(await page.getByText('登录状态丢失是浏览器缓存导致的，清除缓存就能解决。',{exact:true}).count()>=1);
+    await page.getByRole('button',{name:/选中证言：.*登录状态丢失是浏览器缓存导致/}).click();
+    await page.getByRole('button',{name:'选择证据：清除缓存后的复现日志',exact:true}).click();
+    await page.getByRole('button',{name:/异议！.*OBJECTION!/}).click();
+    await page.getByRole('textbox',{name:'庭审陈述'}).fill('这份日志来自全新浏览器目录，清除缓存后仍然复现。');
+    await page.screenshot({path:path.join(results,`${name}-objection-ready.png`),fullPage:true});
+    await page.getByRole('button',{name:'发送提出异议',exact:true}).click();
+    await page.locator('.court-impact:popover-open').waitFor();
+    await page.waitForTimeout(400);
+    await page.screenshot({path:path.join(results,`${name}-objection-effect.png`),fullPage:true});
+    assert.equal(await page.locator('.court-impact strong').innerText(),'异议！');
+    await page.getByRole('button',{name:'暂停',exact:true}).waitFor({state:'visible'});
+    await page.getByText('复核结论 · 原判断需要修正',{exact:true}).waitFor();
+    await page.getByRole('button',{name:'暂停',exact:true}).waitFor({state:'hidden'});
+    await page.getByRole('tab',{name:/质询记录/}).click();
+    const resolution=page.getByRole('combobox',{name:'标记复核结果'}).first();
+    await resolution.selectOption('revised');
+    await page.screenshot({path:path.join(results,`${name}-review-record.png`),fullPage:true});
+    await page.getByRole('tab',{name:/证据/}).click();
+    await page.getByRole('button',{name:'收录新证据',exact:false}).click();
+    await page.getByLabel('证据标题',{exact:true}).fill(`${name} 测试日志`);
+    await page.getByLabel('来源或位置',{exact:true}).fill('tests/browser.txt');
+    await page.getByLabel('证据内容',{exact:true}).fill('<img src=x onerror=alert(1)>\nGET /me → 401');
+    await page.getByRole('button',{name:'收录证据',exact:true}).click();
+    await page.getByRole('dialog').waitFor({state:'hidden'});
+    await page.reload();await page.getByRole('heading',{name:`${name} 测试日志`}).waitFor();
+    await page.getByRole('tab',{name:/质询记录/}).click();
+    assert.equal(await page.getByRole('combobox',{name:'标记复核结果'}).first().inputValue(),'revised');
+    await page.getByRole('tab',{name:/证据/}).click();
+    const filename=path.join(temp,`${name}-upload.log`);await writeFile(filename,'uploaded proof\nstatus: failed');
+    await page.getByRole('button',{name:'收录新证据',exact:false}).click();
+    await page.locator('input[type="file"]').setInputFiles(filename);
+    await page.waitForFunction(name=>[...document.querySelectorAll('input')].some(input=>input.value===name),`${name}-upload.log`);
+    await page.getByLabel('证据标题',{exact:true}).inputValue().then(v=>assert.equal(v,`${name}-upload.log`));
+    await page.getByRole('button',{name:'收录证据',exact:true}).click();await page.getByRole('dialog').waitFor({state:'hidden'});
+    // Native text selection can target a clause, without losing the source message.
+    await page.getByRole('button',{name:/选中证言：.*登录状态丢失是浏览器缓存导致/}).evaluate(el=>{const node=el.querySelector('p').firstChild;const range=document.createRange();range.setStart(node,0);range.setEnd(node,8);const selection=window.getSelection();selection.removeAllRanges();selection.addRange(range);el.click();});
+    assert.equal(await page.locator('.quote-strip>span').innerText(),'登录状态丢失是浏');
+    await page.getByRole('button',{name:'取消选句',exact:true}).click();
+    // Settings previews stay visible above the modal, including reduced-motion mode.
+    await page.getByRole('button',{name:'客户端设置',exact:true}).click();
+    await page.getByRole('button',{name:'预览异议！特效',exact:true}).click();
+    await page.locator('.court-impact:popover-open').waitFor();
+    await page.locator('.court-impact:popover-open').waitFor({state:'hidden'});
+    await page.emulateMedia({reducedMotion:'reduce'});
+    await page.getByRole('button',{name:'预览异议！特效',exact:true}).click();
+    await page.waitForTimeout(300);
+    assert.equal(await page.locator('.court-impact:popover-open').isVisible(),true);
+    assert.equal(await page.locator('.impact-bubble').evaluate(el=>getComputedStyle(el).animationName),'none');
+    await page.screenshot({path:path.join(results,`${name}-reduced-motion-effect.png`),fullPage:true});
+    await page.locator('.court-impact:popover-open').waitFor({state:'hidden'});
+    await page.emulateMedia({reducedMotion:'no-preference'});
+    await page.getByRole('tab',{name:'背景音乐',exact:true}).click();
+    await page.getByText('唱片架，等待你的收藏。',{exact:true}).waitFor();
+    await page.screenshot({path:path.join(results,`${name}-music-empty.png`),fullPage:true});
+    const questionFile=path.join(temp,'Cross-Examination - Moderato 2002.wav'), pursuitFile=path.join(temp,'Pursuit - Test 2002.wav');
+    await writeFile(questionFile,testWave());await writeFile(pursuitFile,testWave());
+    await page.getByLabel('导入到版本',{exact:true}).fill('逆转裁判 2');
+    await page.getByLabel('导入音乐文件',{exact:true}).setInputFiles([questionFile,pursuitFile]);
+    await page.getByText(/已收录 2 首音乐/).waitFor();
+    const questionId=await page.getByLabel('询问配乐',{exact:true}).inputValue(), pursuitId=await page.getByLabel('追求配乐',{exact:true}).inputValue();
+    assert.ok(questionId);assert.ok(pursuitId);assert.notEqual(questionId,pursuitId);
+    await page.getByRole('button',{name:'试听询问配乐',exact:true}).click();
+    await page.waitForFunction(()=>document.querySelector('audio').currentTime>0.15&&!document.querySelector('audio').paused);
+    assert.equal(await page.locator('audio').getAttribute('data-track-id'),questionId);
+    assert.equal(await page.getByRole('switch',{name:'背景音乐',exact:true}).getAttribute('aria-checked'),'false');
+    await page.getByRole('button',{name:'结束试听',exact:true}).click();
+    await page.waitForFunction(()=>document.querySelector('audio').paused);
+    await page.getByLabel('异议配乐',{exact:true}).selectOption(pursuitId);
+    await page.getByLabel('开庭配乐',{exact:true}).selectOption(questionId);
+    await page.getByRole('button',{name:'切换到询问',exact:true}).click();
+    await page.getByRole('switch',{name:'背景音乐',exact:true}).click();
+    await page.waitForFunction(()=>!document.querySelector('audio').paused);
+    await page.getByRole('button',{name:'切换到追求',exact:true}).click();
+    await page.waitForFunction(id=>document.querySelector('audio').dataset.trackId===id&&!document.querySelector('audio').paused,pursuitId);
+    await page.getByRole('slider',{name:'音乐音量',exact:true}).fill('22');
+    await page.waitForTimeout(450);
+    const musicState=await page.evaluate(()=>fetch('/api/music').then(r=>r.json()));
+    assert.equal(musicState.settings.volume,.22);assert.equal(musicState.settings.version,'逆转裁判 2');
+    await page.screenshot({path:path.join(results,`${name}-music-settings.png`),fullPage:true});
+    // Actual authenticated media streaming supports range requests; outsiders get no audio.
+    assert.equal((await fetch(`${base}/api/music/tracks/${questionId}/audio`)).status,401);
+    const range=await fetch(`${base}/api/music/tracks/${questionId}/audio`,{headers:{'X-Court-Token':bootstrap.token,Range:'bytes=44-99'}});
+    assert.equal(range.status,206);assert.equal((await range.arrayBuffer()).byteLength,56);
+    const invalidRange=await fetch(`${base}/api/music/tracks/${questionId}/audio`,{headers:{'X-Court-Token':bootstrap.token,Range:'bytes=999999999-'}});assert.equal(invalidRange.status,416);
+    await page.getByRole('button',{name:'关闭对话框',exact:true}).click();
+    await page.reload();await page.getByRole('button',{name:'背景音乐设置',exact:true}).click();
+    await page.getByLabel('询问配乐',{exact:true}).waitFor();
+    assert.equal(await page.getByLabel('询问配乐',{exact:true}).inputValue(),questionId);
+    assert.equal(await page.getByRole('slider',{name:'音乐音量',exact:true}).inputValue(),'22');
+    // Different version profiles keep independent bindings.
+    await page.getByLabel('配乐版本',{exact:true}).selectOption('逆转裁判 1');
+    await page.waitForFunction(()=>document.querySelector('#phase-questioning').value==='');
+    await page.getByLabel('配乐版本',{exact:true}).selectOption('逆转裁判 2');
+    await page.waitForFunction(id=>document.querySelector('#phase-questioning').value===id,questionId);
+    await page.getByRole('button',{name:'关闭对话框',exact:true}).click();
+    // Automatic phase follows actual objection submission, then moves to pursuit.
+    await page.getByRole('button',{name:/选中证言：.*登录状态丢失是浏览器缓存导致/}).click();
+    await page.getByRole('button',{name:/异议！.*OBJECTION!/}).click();
+    await page.getByRole('button',{name:'发送提出异议',exact:true}).click();
+    await page.waitForFunction(()=>document.querySelector('audio').dataset.phase==='objection');
+    await page.getByRole('button',{name:'暂停',exact:true}).waitFor({state:'hidden'});
+    await page.waitForFunction(()=>document.querySelector('audio').dataset.phase==='pursuit',{},{timeout:12000});
+    await page.getByRole('button',{name:'背景音乐设置',exact:true}).click();
+    await page.getByRole('button',{name:'暂停背景音乐',exact:true}).click();
+    await page.waitForFunction(()=>document.querySelector('audio').paused);
+    await page.getByRole('button',{name:'试听询问配乐',exact:true}).click();
+    await page.waitForFunction(()=>!document.querySelector('audio').paused);
+    await page.getByRole('button',{name:'结束试听',exact:true}).click();
+    await page.waitForFunction(()=>document.querySelector('audio').paused);
+    // Removing a track also removes assignments referencing it.
+    await page.getByRole('button',{name:'移除曲目：Pursuit - Test 2002',exact:true}).click();
+    await page.getByRole('button',{name:'确认移除',exact:true}).click();
+    await page.waitForFunction(()=>document.querySelector('#phase-pursuit').value==='');
+    assert.equal(await page.getByLabel('异议配乐',{exact:true}).inputValue(),'');
+    await page.getByRole('button',{name:'关闭对话框',exact:true}).click();
+    // Small-window layout and native dialog focus controls.
+    await page.setViewportSize({width:390,height:844});
+    if(await page.getByRole('button',{name:'收起法庭记录',exact:true}).count())await page.getByRole('button',{name:'收起法庭记录',exact:true}).click();
+    if(await page.getByRole('button',{name:'收起案件档案',exact:true}).count())await page.getByRole('button',{name:'收起案件档案',exact:true}).click();
+    assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
+    await page.screenshot({path:path.join(results,`${name}-mobile.png`),fullPage:true});
+    await page.getByRole('button',{name:'背景音乐设置',exact:true}).click();
+    assert.equal(await page.getByRole('dialog').evaluate(el=>el.scrollWidth<=el.clientWidth),true);
+    await page.screenshot({path:path.join(results,`${name}-mobile-music.png`),fullPage:true});
+    await page.getByRole('button',{name:'关闭对话框',exact:true}).click();
+    await page.getByRole('button',{name:'庭审指南',exact:true}).click();await page.getByRole('dialog').waitFor();await page.keyboard.press('Escape');await page.getByRole('dialog').waitFor({state:'hidden'});
+    const currentState=await page.evaluate(async()=>fetch('/api/cases/training').then(r=>r.json()));
+    assert.equal(currentState.activeTurn,null);
+    assert.ok(currentState.record.examinations.every(e=>e.status==='completed'));
+    reports.push({browser:name,pass:true,screenshots:10,completedExaminations:currentState.record.examinations.length,musicImport:true,musicPlayback:true,autoPhase:true,versionProfiles:true,reducedMotionEffect:true,audioRangeProtection:true,errors:browserErrors});errors.push(...browserErrors);
+    await context.close();context=null;
+  }
+  const saved=JSON.parse(await readFile(dataFile,'utf8'));
+  assert.ok(saved.cases.training.examinations.some(e=>e.action==='object'&&e.evidence.length===1&&e.quote.text.includes('缓存')));
+  assert.ok(saved.cases.training.evidence.some(e=>e.title==='edge-upload.log'));
+  assert.deepEqual(errors,[]);
+  const report={passed:true,browsers:reports,security:{unauthenticatedRead:401,crossOrigin:403},isolatedData:true,errors};
+  await writeFile(path.join(results,'ui-report.json'),JSON.stringify(report,null,2));
+  console.log(JSON.stringify(report,null,2));
+} catch(e) {
+  if(context){const p=context.pages().at(-1);await p?.screenshot({path:path.join(results,'failure.png'),fullPage:true}).catch(()=>{});}
+  console.error(e);process.exitCode=1;
+  await writeFile(path.join(results,'ui-report.json'),JSON.stringify({passed:false,error:e.message,browsers:reports},null,2));
+} finally {
+  if(context)await context.close();
+  server.kill();await Promise.race([once(server,'exit'),new Promise(r=>setTimeout(r,2500))]);
+  // These directories were created by this script under a unique OS temp root.
+  const target=path.resolve(temp), baseTemp=path.resolve(os.tmpdir())+path.sep;
+  if(target.startsWith(baseTemp)&&path.basename(target).startsWith('codex-court-browser-'))await rm(target,{recursive:true,force:true,maxRetries:4,retryDelay:500}).catch(()=>{});
+}

@@ -1,0 +1,14 @@
+{
+  "version": "24.22.0",
+  "baseUrl": "https://nodejs.org/dist/v24.22.0",
+  "files": {
+    "x64": {
+      "file": "node-v24.22.0-win-x64.zip",
+      "sha256": "f9683a19877e12a9b167305c8db71040d812876359de21f0d2e97c3f321f80c3"
+    },
+    "arm64": {
+      "file": "node-v24.22.0-win-arm64.zip",
+      "sha256": "3a5c209a5bc59e65b3bc0fa13ed5e166a26bd3d55332847f498b76b037408d61"
+    }
+  }
+}
