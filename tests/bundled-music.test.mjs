@@ -14,7 +14,9 @@ async function fixture(fn) {
 test('bundled recordings seed all eight phases once and respect later deletion',()=>fixture(async(temp,store)=>{
   await seedBundledMusic(store,bundle);
   const state=store.snapshot();
-  assert.equal(state.tracks.length,8); assert.equal(state.settings.bindings.length,8);
+  assert.equal(state.tracks.length,8); assert.equal(state.settings.bindings.length,9);
+  assert.equal(state.settings.bindings.some(b=>b.phase==='questioning_fast'),false,'Fast slot stays empty until the user supplies it');
+  assert.equal(state.settings.bindings.find(b=>b.phase==='logic').trackId,state.settings.bindings.find(b=>b.phase==='thinking').trackId);
   assert.equal(state.settings.version,'逆转裁判 4'); assert.equal(state.settings.enabled,true);
   for(const track of state.tracks) assert.equal((await readFile(store.pathFor(track))).length,track.size);
   await seedBundledMusic(store,bundle); assert.deepEqual(store.snapshot(),state);

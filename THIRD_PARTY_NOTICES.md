@@ -32,3 +32,8 @@ retain their original licenses; this project does not relicense them.
 for this project. The scale emblem and on-screen impact effects are original
 SVG/CSS. UI fonts use installed system fonts. Short sound effects are synthesized
 in the browser; original game character voice lines are not bundled.
+
+`public/assets/phoenix-mentor.png` is an AI-generated fan-art depiction of Phoenix
+Wright's Apollo Justice-era appearance, created for the optional tutor. The
+character belongs to Capcom; the project does not claim rights to the character
+or imply official endorsement. Generation details are in `docs/mentor-art.md`.

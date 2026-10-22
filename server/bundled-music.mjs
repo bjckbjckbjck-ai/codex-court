@@ -35,6 +35,8 @@ export async function seedBundledMusic(store, directory) {
         next.settings.bindings.push({ version: manifest.version, phase: track.phase, trackId: track.id });
       }
       next.settings.version = manifest.version;
+      const thinking=next.settings.bindings.find(b=>b.version===manifest.version&&b.phase==='thinking');
+      if(thinking&&!next.settings.bindings.some(b=>b.version===manifest.version&&b.phase==='logic'))next.settings.bindings.push({...thinking,phase:'logic'});
       next.settings.enabled = true;
       next.bundledPackApplied = manifest.id;
     });

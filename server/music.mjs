@@ -2,7 +2,7 @@ import { mkdir, readFile, writeFile, rename, unlink, stat } from 'node:fs/promis
 import { createReadStream } from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { DEFAULT_MUSIC_SETTINGS, PHASES, MAX_AUDIO_BYTES, AUDIO_EXTENSIONS, inferPhase } from '../shared/music.mjs';
+import { DEFAULT_MUSIC_SETTINGS, PHASES, MAX_AUDIO_BYTES, AUDIO_EXTENSIONS, inferPhase, upgradePhaseBindings } from '../shared/music.mjs';
 
 const failure = (message, status = 400) => Object.assign(new Error(message), { status });
 const clean = (value, max = 100) => String(value || '').replace(/[\u0000-\u001f]/g, '').trim().slice(0, max);
@@ -38,6 +38,7 @@ export class MusicStore {
       if (e.code !== 'ENOENT') throw new Error('音乐库无法读取；原文件已保留，请先检查 library.json');
       this.data = { tracks: [], settings: structuredClone(DEFAULT_MUSIC_SETTINGS) };
     }
+    if (upgradePhaseBindings(this.data)) await this.mutate(() => {});
     return this;
   }
   snapshot() { return structuredClone(this.data); }

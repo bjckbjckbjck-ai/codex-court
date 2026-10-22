@@ -6,6 +6,8 @@ import { boundTrack, DEFAULT_MUSIC_SETTINGS } from '../shared/music.mjs';
 export function useMusic(ready) {
   const [library, setLibrary] = useState({ tracks: [], settings: structuredClone(DEFAULT_MUSIC_SETTINGS) });
   const [phase, setPhase] = useState('recess'), [previewId, setPreviewId] = useState(null), [paused, setPaused] = useState(false);
+  const [focusPhase,setFocusPhase] = useState(null);
+  const audiblePhase = library.settings.auto && focusPhase ? focusPhase : phase;
   const [playback, setPlayback] = useState({ state: 'off', title: '' }), [error, setError] = useState('');
   const audioRef = useRef(null), config = useRef(library.settings), phaseTimer = useRef(), fadeTimer = useRef(), revision = useRef(0), mutations = useRef(Promise.resolve());
   const pausedRef = useRef(paused), previewResume = useRef(null);
@@ -51,8 +53,8 @@ export function useMusic(ready) {
   useEffect(() => {
     const audio = audioRef.current; if (!audio) return;
     const serial = ++revision.current; clearInterval(fadeTimer.current);
-    const track = previewId ? library.tracks.find(t => t.id === previewId) : boundTrack(library, phase);
-    audio.dataset.phase = phase;
+    const track = previewId ? library.tracks.find(t => t.id === previewId) : boundTrack(library, audiblePhase);
+    audio.dataset.phase = audiblePhase;
     audio.dataset.preview = String(!!previewId);
     if ((!library.settings.enabled && !previewId) || paused || !track) {
       audio.pause();
@@ -88,7 +90,7 @@ export function useMusic(ready) {
     else if (!audio.paused) ramp(audio.volume, 0, 180, () => { audio.pause(); start(); });
     else start();
     return () => { if (fading) clearInterval(fadeTimer.current); audio.removeEventListener('error', failed); };
-  }, [library, phase, previewId, paused]);
+  }, [library, audiblePhase, previewId, paused]);
 
-  return { library, setLibrary, phase, changePhase, clearScheduled, previewId, preview, endPreview, paused, setPaused, playback, error, setError, updateSettings, toggle, retry, audioRef };
+  return { library, setLibrary, phase:audiblePhase, basePhase:phase, setFocusPhase, changePhase, clearScheduled, previewId, preview, endPreview, paused, setPaused, playback, error, setError, updateSettings, toggle, retry, audioRef };
 }

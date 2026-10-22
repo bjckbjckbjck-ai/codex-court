@@ -25,7 +25,7 @@ export function CourtSettings({ onClose, initialTab = 'performance', music, soun
     </div>}
     {tab === 'music' && <MusicSettings music={music}/>}
     {tab === 'sources' && <div className="music-sources"><p className="settings-description">按版本整理的官方入口。原声专辑与游戏内音乐鉴赏已分别标明；这里不直接播放网页音乐。取得音频文件后，在「背景音乐」中导入。</p><div className="source-grid">{MUSIC_SOURCES.map(source => <a href={source.url} key={source.title} target="_blank" rel="noreferrer noopener"><span className="source-type">{source.type}</span><strong>{source.title}<ArrowUpRight size={18}/></strong><p>{source.detail}</p><small>{new URL(source.url).hostname}</small></a>)}</div><p className="settings-footnote">来源：Capcom 官方商店及支持页面 · 整理于 2026-10-20 · 默认配乐：逆转裁判 4 · 可自行导入更多版本</p></div>}
-    <div className="settings-version">CODEX COURT · LOCAL EDITION 1.1</div>
+    <div className="settings-version">CODEX COURT · LOCAL EDITION 1.3</div>
   </Modal>;
 }
 
@@ -66,7 +66,7 @@ function MusicSettings({ music }) {
   const states = { off:'背景音乐已关闭', paused:'已暂停', empty:'当前环节尚未分配音乐', blocked:'浏览器等待你点击播放', loading:'正在载入音乐…', error:'这首音频无法播放，请换用 MP3、WAV 或 OGG 文件', playing:previewId?'正在试听':'正在播放' };
   const tracks = library.tracks.filter(t => `${t.title} ${t.version}`.toLowerCase().includes(filter.toLowerCase()));
   return <div className="music-settings">
-    <div className="music-master"><div className="music-master-icon"><Music2 size={26}/></div><div><h3>为每一个转折，配上音乐。</h3><p>空白的环节保持安静。导入后即可试听、分配与自动切换。</p></div><Switch label="背景音乐" checked={library.settings.enabled} onChange={value=>{music.setPaused(false);save({enabled:value});}}/></div>
+    <div className="music-master"><div className="music-master-icon"><Music2 size={26}/></div><div><h3>为每一个转折，配上音乐。</h3><p>询问快慢分别配曲；检视证据、导师讲解使用逻辑曲。空白环节保持安静。</p></div><Switch label="背景音乐" checked={library.settings.enabled} onChange={value=>{music.setPaused(false);save({enabled:value});}}/></div>
     <div className="music-controls"><label className="volume-control"><Volume2 size={17}/><span>音乐音量</span><input type="range" min="0" max="100" step="1" aria-label="音乐音量" value={Math.round(volume*100)} onChange={e=>{const value=Number(e.target.value)/100;setVolume(value);if(music.audioRef.current)music.audioRef.current.volume=value;clearTimeout(pendingVolume.current);pendingVolume.current=setTimeout(()=>save({volume:value}),180);}}/><output>{Math.round(volume*100)}%</output></label><label className="auto-music"><input type="checkbox" checked={library.settings.auto} onChange={e=>{music.clearScheduled();save({auto:e.target.checked});}}/>随庭审自动切换</label></div>
     <div className={`now-playing ${playback.state==='playing'?'playing':''}`} data-testid="now-playing"><span className="equalizer"><i/><i/><i/><i/></span><div><b>{playback.title||(library.tracks.length?'当前环节未分配音乐':'等待你的第一首配乐')}</b><span>{previewId?'试听':currentPhase?.label} · {states[playback.state]}</span></div>{previewId?<button className="small-button" onClick={music.endPreview}><X size={14}/>结束试听</button>:<button className="small-button" aria-label={playback.state==='playing'?'暂停背景音乐':'播放背景音乐'} disabled={!boundTrack(library,music.phase)} onClick={()=>playback.state==='blocked'?music.retry():music.toggle().catch(e=>setError(e.message))}>{playback.state==='playing'?<Pause size={15}/>:<Play size={15}/>}</button>}</div>
     {(error||music.error)&&<div className="inline-error" role="alert">{error||music.error}</div>}

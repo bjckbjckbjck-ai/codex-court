@@ -10,6 +10,7 @@ import { trainingThread, trainingTurns, trainingEvidence, trainingReply } from '
 import { MusicStore } from './music.mjs';
 import { seedBundledMusic } from './bundled-music.mjs';
 import { MAX_AUDIO_BYTES } from '../shared/music.mjs';
+import { MentorStore, MentorService } from './mentor.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const port = Number(process.env.PORT || 4317);
@@ -17,6 +18,7 @@ const isTest = process.env.COURT_TEST_MODE === '1';
 if (isTest && !process.env.DATA_FILE) throw new Error('测试模式必须设置独立的 DATA_FILE');
 const dataFile = path.resolve(process.env.DATA_FILE || path.join(root, '.local', 'court.json'));
 const store = await new CaseStore(dataFile).load();
+const mentorStore = await new MentorStore(dataFile + '.mentor.json').load();
 const music = await new MusicStore(dataFile + '.music').load();
 if (!isTest || process.env.COURT_BUNDLED_MUSIC === '1') await seedBundledMusic(music, path.join(root, 'assets', 'music'));
 const token = randomBytes(32).toString('hex');
@@ -24,7 +26,11 @@ const clients = new Set(), loaded = new Set(), active = new Map(), approvals = n
 const finishedTurns = new Map();
 let rpc, connectPromise, connection = { state: 'connecting' }, modelList = [], account = null;
 let demoTurns = structuredClone(trainingTurns);
-const broadcast = (event) => { for (const client of clients) client.write(`data: ${JSON.stringify(event)}\n\n`); };
+const broadcast = (event) => {
+  const session = event.type === 'codex' && mentorStore.data.sessions.find(s => s.threadId === event.params?.threadId);
+  if (session) event.mentorSessionId = session.id;
+  for (const client of clients) client.write(`data: ${JSON.stringify(event)}\n\n`);
+};
 function safeError(error) { return String(error?.message || error).replace(/sk-[A-Za-z0-9_-]+/g, '[redacted]').replace(/Bearer\s+\S+/gi, 'Bearer [redacted]'); }
 function connect() {
   if (connectPromise) return connectPromise;
@@ -51,6 +57,10 @@ function connect() {
       if (/^(turn\/|item\/agentMessage\/|item\/started$|item\/completed$|item\/commandExecution\/outputDelta$|thread\/status\/changed$|error$|serverRequest\/resolved$)/.test(method)) broadcast({ type: 'codex', method, params: p });
     });
     rpc.on('request', msg => {
+      if (mentorStore.data.sessions.some(s=>s.threadId===msg.params?.threadId) && ['item/commandExecution/requestApproval','item/fileChange/requestApproval','execCommandApproval','applyPatchApproval'].includes(msg.method)) {
+        rpc.respond(msg.id,{decision:['execCommandApproval','applyPatchApproval'].includes(msg.method)?'denied':'decline'});
+        broadcast({type:'notice',threadId:msg.params.threadId,message:'导师保持只读讲解，需要额外权限的操作已取消。'});return;
+      }
       if (['item/commandExecution/requestApproval', 'item/fileChange/requestApproval', 'item/tool/requestUserInput', 'execCommandApproval', 'applyPatchApproval'].includes(msg.method)) {
         approvals.set(String(msg.id), msg); broadcast({ type: 'approval', request: msg }); return;
       }
@@ -73,6 +83,7 @@ function connect() {
   })().finally(() => { connectPromise = null; });
   return connectPromise;
 }
+const mentor = new MentorService({store:mentorStore,native,root,isTest,loaded,active,starting,finishedTurns,broadcast,history,cleanTurn,approvals});
 void connect();
 
 async function native() { if (connectPromise) await connectPromise; if (connection.state !== 'connected') throw Object.assign(new Error(connection.detail || 'Codex 尚未连接'), { status: 503 }); return rpc; }
@@ -165,7 +176,7 @@ const server = http.createServer(async (req, res) => {
   res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; media-src 'self' blob:; frame-ancestors 'none'; base-uri 'none'; object-src 'none'");
   const url = new URL(req.url, `http://${expected}`), pathname = url.pathname;
   try {
-    if (pathname === '/api/health') return sendJson(res, 200, { app: 'codex-court', version: '1.2.0' });
+    if (pathname === '/api/health') return sendJson(res, 200, { app: 'codex-court', version: '1.3.0' });
     if (pathname === '/api/bootstrap' && req.method === 'GET') {
       res.setHeader('Set-Cookie', `court_session=${token}; HttpOnly; SameSite=Strict; Path=/`);
       return sendJson(res, 200, { token, connection, account, models: modelList, cwd: root, testMode: isTest, active: Object.fromEntries(active), approvals: [...approvals.values()] });
@@ -234,6 +245,21 @@ const server = http.createServer(async (req, res) => {
       const result = await bridge.call('thread/start', params); loaded.add(result.thread.id);
       if (input.name?.trim()) { await bridge.call('thread/name/set', { threadId: result.thread.id, name: input.name.trim().slice(0, 100) }); result.thread.name = input.name.trim(); }
       return sendJson(res, 200, { thread: result.thread });
+    }
+    if (pathname === '/api/mentor/sessions' && req.method === 'POST') return sendJson(res, 200, await mentor.open(await body(req)));
+    const lesson = pathname.match(/^\/api\/mentor\/sessions\/([^/]+)(?:\/(.+))?$/);
+    if (lesson) {
+      const id = requireId(lesson[1]), op = lesson[2];
+      if (!op && req.method === 'GET') return sendJson(res,200,await mentor.snapshot(id,url.searchParams.get('cursor')));
+      if (op === 'turn' && req.method === 'POST') return sendJson(res,200,await mentor.ask(id,await body(req)));
+      if (op === 'interrupt' && req.method === 'POST') return sendJson(res,200,await mentor.interrupt(id));
+      if (op === 'preferences' && req.method === 'PATCH') return sendJson(res,200,await mentor.preferences(id,await body(req)));
+      if (op === 'cards' && req.method === 'POST') return sendJson(res,200,await mentorStore.card(id,await body(req)));
+      if (op?.startsWith('cards/')) {
+        const cardId=requireId(op.slice(6));
+        if (req.method === 'PATCH') return sendJson(res,200,await mentorStore.card(id,await body(req),cardId));
+        if (req.method === 'DELETE') { const session=mentorStore.get(id);session.cards=session.cards.filter(c=>c.id!==cardId);await mentorStore.save();return sendJson(res,200,{ok:true}); }
+      }
     }
     const match = pathname.match(/^\/api\/cases\/([^/]+)(?:\/(.+))?$/);
     if (match) {

@@ -24,4 +24,12 @@ Known boundaries: desktop-host dynamic tools, remote/cloud conversation provider
 
 Protocol reference: https://learn.chatgpt.com/docs/app-server
 
+## Mentor (1.3)
+
+`server/mentor.mjs` keeps a distinct native Codex thread per source conversation, or a separate general-study thread. The panel is loaded without starting a model turn. Its first submitted question starts a thread with the source project's working directory, `sandbox: read-only`, approval policy `never`, and the tutoring developer instructions. Resume restores these constraints; each teaching turn also explicitly requests a read-only sandbox. Original work threads are only read for their project metadata, never resumed or written by the tutor.
+
+Mentor thread IDs, learning preferences and user-edited cards persist in `DATA_FILE + '.mentor.json'`. Native Codex retains the actual teaching conversation. Selected context is explicitly quoted material; optional evidence images use real image inputs. SSE events carry a mentor-session identifier so early streaming replies and terminal responses remain scoped correctly. Training uses a clearly labeled deterministic fixture, with no model calls.
+
+Audio focus is separate from the underlying courtroom phase. Evidence inspection and the mentor panel request the logic phase only when automatic music is enabled; closing them reveals the current underlying phase. Pause and mute settings continue to apply. Fast questioning has its own slot; existing slow questioning IDs remain compatible.
+
 Windows data directory: https://learn.chatgpt.com/docs/windows/windows-app

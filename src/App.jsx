@@ -2,11 +2,13 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Scale, Plus, Search, ArrowUpRight, ArrowRight, RefreshCw, FolderOpen, Files, BookOpen, Gavel, CircleHelp, Volume2, VolumeX, Settings2, ChevronRight, ChevronLeft, ChevronDown, FileText, Image, Quote, Check, X, MoreHorizontal, Send, Square, Paperclip, Download, Archive, Clock3, ShieldCheck, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Sparkles, MessageSquareText, Target, Link2, Copy, Trash2, FlaskConical, CircleAlert, LogOut, CornerDownLeft, LoaderCircle, CheckCheck, ExternalLink, ListChecks, SearchCheck } from 'lucide-react';
 import { api, setToken, updateTurn, mergeTurns, dateLabel, playAccent, actionLabels, markdown } from './lib.js';
 import { IconButton, Modal, EvidenceForm, Message, ToolActivity, ApprovalCard, NewCase } from './components.jsx';
-import { Music2 } from 'lucide-react';
+import { Music2, GraduationCap, Zap } from 'lucide-react';
 import { CourtSettings } from './CourtSettings.jsx';
 import { ObjectionEffect } from './ObjectionEffect.jsx';
 import { useMusic } from './useMusic.js';
 import { PHASES } from '../shared/music.mjs';
+import { MentorPanel } from './MentorPanel.jsx';
+import { EvidenceViewer } from './EvidenceViewer.jsx';
 
 const EMPTY_RECORD = { evidence: [], examinations: [] };
 const resolutionLabels = {pending:'待复核',upheld:'维持原句',revised:'已修正',uncertain:'仍待验证'};
@@ -21,6 +23,13 @@ export default function App() {
   const terminalTurns=useRef(new Set());
   const burstTimer=useRef(), sentAction=useRef('chat');
   const music=useMusic(!!boot);
+  const [mentorOpen,setMentorOpen]=useState(false),[mentorMaterial,setMentorMaterial]=useState(null),[fastQuestioning,setFastQuestioning]=useState(false);
+  const fastRef=useRef(false);fastRef.current=fastQuestioning;
+  const questioningPhase=()=>fastRef.current?'questioning_fast':'questioning';
+  const latestExplanation=turns.flatMap(t=>t.items||[]).filter(i=>i.type==='agentMessage'&&i.text).at(-1);
+  const teachingMaterial=mentorMaterial||(selected?{title:'选中的证言',text:selected.text,source:`消息 ${selected.itemId}`} :latestExplanation?{title:'当前最近一段回复',text:latestExplanation.text.slice(0,12000),source:`消息 ${latestExplanation.id}`} :null);
+  useEffect(()=>{music.setFocusPhase(evidenceDetail||mentorOpen?'logic':null);},[!!evidenceDetail,mentorOpen]);
+  function openMentor(material=null){setMentorMaterial(material);setMentorOpen(true);}
   const running=!!activeTurn, training=current?.id==='training';
   const chosenModel=(boot?.models||[]).find(m=>m.model===(model||current?.model));
   function showEffect(kind, force=false) {
@@ -43,6 +52,7 @@ export default function App() {
         events=new EventSource('/api/events');
         events.onmessage=e=>{
           const msg=JSON.parse(e.data), id=currentRef.current;
+          window.dispatchEvent(new CustomEvent('court-event',{detail:msg}));
           if(msg.type==='connection') {setConnection(msg.connection);if(msg.connection.state==='connected'){refreshBootstrap();loadThreads();}if(msg.connection.state==='error'){setActiveTurn(null);setPendingApprovals([]);setError(msg.connection.detail);}return;}
           if(msg.type==='approvalResolved'){setPendingApprovals(old=>old.filter(a=>String(a.id)!==String(msg.id)));return;}
           if(msg.type==='approval' && msg.request.params.threadId===id){setPendingApprovals(old=>[...old.filter(a=>a.id!==msg.request.id),msg.request]);return;}
@@ -55,7 +65,7 @@ export default function App() {
             terminalTurns.current.add(p.turn.id);
             setActiveTurn(null);setPendingApprovals([]);
             if(p.turn.status==='interrupted')music.changePhase('recess',{automatic:true});
-            else if(sentAction.current!=='object')music.changePhase('questioning',{automatic:true});
+            else if(sentAction.current!=='object')music.changePhase(questioningPhase(),{automatic:true});
             if(p.turn.error)setError(p.turn.error.message||'回应未完成，请查看执行记录');
             api(`/cases/${id}/record`).then(r=>{if(currentRef.current===id)setRecord(r);}).catch(()=>{});
           }
@@ -75,12 +85,13 @@ export default function App() {
   useEffect(()=>{if(!boot)return;const timer=setTimeout(()=>loadThreads(null,search,archived),250);return()=>clearTimeout(timer);},[search,archived]);
   useEffect(()=>{ if(stickBottom.current && scrollRef.current) scrollRef.current.scrollTop=scrollRef.current.scrollHeight; },[turns,pendingApprovals]);
   useEffect(()=>{
-    const key=e=>{if(e.key==='Escape'){setSelected(null);setAction('chat');if(innerWidth<1050)setLeftOpen(false);if(innerWidth<=720)setRightOpen(false);}if((e.ctrlKey||e.metaKey)&&e.key==='k'){e.preventDefault();setLeftOpen(true);if(innerWidth<=720)setRightOpen(false);setTimeout(()=>document.querySelector('#case-search')?.focus(),0);}};
+    const key=e=>{if(document.querySelector('dialog[open]'))return;if(e.key==='Escape'){setSelected(null);setAction('chat');if(innerWidth<1050)setLeftOpen(false);if(innerWidth<=720)setRightOpen(false);}if((e.ctrlKey||e.metaKey)&&e.key==='k'){e.preventDefault();setLeftOpen(true);if(innerWidth<=720)setRightOpen(false);setTimeout(()=>document.querySelector('#case-search')?.focus(),0);}};
     const resize=()=>{setViewportWidth(innerWidth);if(innerWidth<1050)setLeftOpen(false);if(innerWidth<=720)setRightOpen(false);};
     window.addEventListener('keydown',key);window.addEventListener('resize',resize);return()=>{window.removeEventListener('keydown',key);window.removeEventListener('resize',resize);};
   },[]);
 
   async function openCase(id) {
+    setMentorMaterial(null);setFastQuestioning(false);fastRef.current=false;
     const serial=++openSerial.current;currentRef.current=id;setLoading(true);setError('');setSelected(null);setAction('chat');setEvidenceIds([]);setDraft('');setTurns([]);setRecord(EMPTY_RECORD);setActiveTurn(null);setPendingApprovals([]);setModel('');setEffort('');stickBottom.current=true;
     try {
       const result=await api(`/cases/${id}`);if(serial!==openSerial.current)return;
@@ -96,7 +107,7 @@ export default function App() {
       setTurns(old=>older?mergeTurns(result.turns,old):mergeTurns(old,result.turns));setRecord(result.record);setLocked(result.locked);setActiveTurn(result.activeTurn);setPendingApprovals(result.approvals||[]);if(older||!turns.length)setHistoryCursor(result.nextCursor);
     }catch(e){setError(e.message);}
   }
-  function chooseStatement(quote) {setSelected(quote);setAction('press');music.changePhase('questioning',{automatic:true});if(innerWidth>720)setRightOpen(true);composerRef.current?.focus({preventScroll:true});}
+  function chooseStatement(quote) {setMentorMaterial(null);setSelected(quote);setAction('press');music.changePhase(questioningPhase(),{automatic:true});if(innerWidth>720)setRightOpen(true);composerRef.current?.focus({preventScroll:true});}
   function chooseAction(next) {
     if(!selected){notify('先点击一条 Codex 证言，或划选其中的文字。');return;}
     setAction(next);if(next==='present'){setTab('evidence');music.changePhase('investigation',{automatic:true});}composerRef.current?.focus({preventScroll:true});
@@ -107,8 +118,9 @@ export default function App() {
     const id=current.id, sendingAction=action;
     setSending(true);setError('');stickBottom.current=true;
     sentAction.current=sendingAction;
+    if(sendingAction==='press'&&evidenceIds.length&&music.library.settings.bindings.some(b=>b.version===music.library.settings.version&&b.phase==='questioning_fast')){setFastQuestioning(true);fastRef.current=true;}
     if(sendingAction!=='chat')showEffect(sendingAction);
-    music.changePhase(({chat:'thinking',press:'questioning',present:'investigation',verify:'investigation',object:'objection'})[sendingAction],{automatic:true,...(sendingAction==='object'?{after:'pursuit'}:{})});
+    music.changePhase(({chat:'thinking',press:questioningPhase(),present:'investigation',verify:'investigation',object:'objection'})[sendingAction],{automatic:true,...(sendingAction==='object'?{after:'pursuit'}:{})});
     try {
       const result=await api(`/cases/${id}/turn`,{method:'POST',body:{text:draft,action,quote:selected,evidenceIds,model,effort}});
       if(currentRef.current!==id)return;
@@ -121,7 +133,7 @@ export default function App() {
   async function addEvidence(input){const id=currentRef.current;const item=await api(`/cases/${id}/evidence`,{method:'POST',body:input});if(currentRef.current===id){setRecord(old=>({...old,evidence:[...old.evidence,item]}));setEvidenceIds(old=>[...old,item.id].slice(0,8));notify('证据已收录，并加入本次出示');}}
   async function removeEvidence(item){try{const r=await api(`/cases/${current.id}/evidence/${item.id}`,{method:'DELETE'});setRecord(r);setEvidenceIds(old=>old.filter(id=>id!==item.id));setEvidenceDetail(null);notify('证据已移除；历史质询仍保留证据名称和指纹。');}catch(e){notify(e.message);}}
   async function changeResolution(id,resolution){try{setRecord(await api(`/cases/${current.id}/examinations/${id}`,{method:'PATCH',body:{resolution}}));}catch(e){notify(e.message);}}
-  function home(){openSerial.current++;currentRef.current=null;setCurrent(null);setTurns([]);setRecord(EMPTY_RECORD);setSelected(null);setError('');setActiveTurn(null);setLoading(false);music.changePhase('recess',{automatic:true});history.replaceState(null,'',location.pathname);}
+  function home(){if(innerWidth<1050)setLeftOpen(false);if(innerWidth<=720)setRightOpen(false);setMentorMaterial(null);openSerial.current++;currentRef.current=null;setCurrent(null);setTurns([]);setRecord(EMPTY_RECORD);setSelected(null);setError('');setActiveTurn(null);setLoading(false);music.changePhase('recess',{automatic:true});history.replaceState(null,'',location.pathname);}
   async function reconnect(){setConnection({state:'connecting'});try{const b=await api('/connect',{method:'POST',body:{}});setConnection(b.connection);await refreshBootstrap();await loadThreads();}catch(e){setConnection({state:'error',detail:e.message});}}
   function goToTurn(id){document.getElementById('turn-'+id)?.scrollIntoView({behavior:'smooth',block:'start'});}
 
@@ -142,7 +154,7 @@ export default function App() {
     </aside>
 
     <main className="workspace">
-      <header className="workspace-header"><div className="breadcrumb"><IconButton icon={leftOpen?PanelLeftClose:PanelLeftOpen} label={leftOpen?'收起案件档案':'展开案件档案'} onClick={()=>setLeftOpen(!leftOpen)}/><span className="breadcrumb-home" onClick={home}>法庭</span><ChevronRight size={13}/><strong>{current?.name||'让每一个结论，经得起追问'}</strong>{training&&<span className="demo-tag">本地演练</span>}</div><div className="header-actions"><button className="music-header" aria-label="背景音乐设置" onClick={()=>setModal({type:'settings',tab:'music'})}><Music2 size={16}/><span>{music.playback.state==='playing'?PHASES.find(p=>p.id===music.phase)?.label:'配乐'}</span>{music.playback.state==='playing'&&<i/>}</button><IconButton icon={sound?Volume2:VolumeX} label={sound?'关闭音效':'开启音效'} onClick={()=>{setSound(!sound);localStorage.setItem('court:sound',String(!sound));if(!sound)playAccent('press');}}/><IconButton icon={CircleHelp} label="庭审指南" onClick={()=>setModal('help')}/><span className="header-divider"/><IconButton icon={rightOpen?PanelRightClose:PanelRightOpen} label={rightOpen?'收起法庭记录':'展开法庭记录'} onClick={()=>setRightOpen(!rightOpen)}/></div></header>
+      <header className="workspace-header"><div className="breadcrumb"><IconButton icon={leftOpen?PanelLeftClose:PanelLeftOpen} label={leftOpen?'收起案件档案':'展开案件档案'} onClick={()=>setLeftOpen(!leftOpen)}/><span className="breadcrumb-home" onClick={home}>法庭</span><ChevronRight size={13}/><strong>{current?.name||'让每一个结论，经得起追问'}</strong>{training&&<span className="demo-tag">本地演练</span>}</div><div className="header-actions"><button className={`mentor-header-button ${mentorOpen?"active":""}`} aria-label="成步堂导师" aria-pressed={mentorOpen} onClick={()=>mentorOpen?setMentorOpen(false):openMentor()}><GraduationCap size={17}/><span>导师</span></button>{current&&<button className={`tempo-button ${fastQuestioning?"active":""}`} aria-label="关键追问" aria-pressed={fastQuestioning} title="切换慢速 / 快速询问配乐" onClick={()=>{const next=!fastQuestioning;setFastQuestioning(next);fastRef.current=next;music.changePhase(next?"questioning_fast":"questioning",{automatic:true});if(next&&!music.library.settings.bindings.some(b=>b.version===music.library.settings.version&&b.phase==="questioning_fast"))notify("快询问曲位尚未分配，请在配乐设置中导入并选择。");}}><Zap size={15}/><span>{fastQuestioning?"关键追问":"慢速询问"}</span></button>}<button className="music-header" aria-label="背景音乐设置" onClick={()=>setModal({type:'settings',tab:'music'})}><Music2 size={16}/><span>{music.playback.state==='playing'?PHASES.find(p=>p.id===music.phase)?.label:'配乐'}</span>{music.playback.state==='playing'&&<i/>}</button><IconButton icon={sound?Volume2:VolumeX} label={sound?'关闭音效':'开启音效'} onClick={()=>{setSound(!sound);localStorage.setItem('court:sound',String(!sound));if(!sound)playAccent('press');}}/><IconButton icon={CircleHelp} label="庭审指南" onClick={()=>setModal('help')}/><span className="header-divider"/><IconButton icon={rightOpen?PanelRightClose:PanelRightOpen} label={rightOpen?'收起法庭记录':'展开法庭记录'} onClick={()=>setRightOpen(!rightOpen)}/></div></header>
       <div className={`court-stage ${compactStage?'compact':''}`}>
         <img className="stage-art" src="/assets/courtroom.png" alt="暖金色法庭内，深蓝西装的辩护人手持卷宗，准备展开质询"/>
         <div className="stage-shade"/>
@@ -171,7 +183,7 @@ export default function App() {
           {error&&<div className="error-banner" role="alert"><CircleAlert size={17}/><span>{error}</span><button onClick={()=>setError('')} aria-label="关闭错误提示"><X size={14}/></button></div>}
           <div className="court-action-caption"><span>{selected?'已选中证言 · 选择你的质询方式':'先点击或划选一句 Codex 证言，再发起质询'}</span>{selected&&<b>{actionLabels[action]}</b>}</div><div className="court-actions"><button className={action==='press'?'active':''} onClick={()=>chooseAction('press')}><MessageSquareText size={17}/><strong>追问</strong><small>HOLD IT!</small></button><button className={action==='present'?'active':''} onClick={()=>chooseAction('present')}><Files size={17}/><strong>出示证据</strong><small>TAKE THAT!</small></button><button className={`objection-button ${action==='object'?'active':''}`} onClick={()=>chooseAction('object')}><Gavel size={17}/><strong>异议！</strong><small>OBJECTION!</small></button><IconButton icon={SearchCheck} label="要求验证选中的语句" className={`icon-button verify-button ${action==='verify'?'active':''}`} onClick={()=>chooseAction('verify')}/></div>
           <div className={`composer ${selected?'has-selection':''}`}>
-            {selected&&<div className="quote-strip"><Quote size={15}/><span>{selected.text}</span><IconButton icon={X} label="取消选句" onClick={()=>{setSelected(null);setAction('chat');}}/></div>}
+            {selected&&<div className="quote-strip"><Quote size={15}/><span>{selected.text}</span><button className="quote-mentor" aria-label="请导师解释选句" onClick={()=>openMentor()}><GraduationCap size={14}/>讲解</button><IconButton icon={X} label="取消选句" onClick={()=>{setSelected(null);setAction('chat');}}/></div>}
             {evidenceIds.length>0&&<div className="attached-evidence">{record.evidence.filter(e=>evidenceIds.includes(e.id)).map(e=><button key={e.id} onClick={()=>toggleEvidence(e.id)}><Paperclip size={12}/>{e.title}<X size={12}/></button>)}</div>}
             <textarea ref={composerRef} aria-label="庭审陈述" value={draft} onChange={e=>setDraft(e.target.value)} placeholder={selected?`针对这句话，补充你的${action==='object'?'异议理由':'问题'}…（可直接发送）`:'写下你的陈述，或先点击一条证言…'} onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.nativeEvent.isComposing){e.preventDefault();send();}}} rows={2}/>
             <div className="composer-footer"><div className="composer-tools"><IconButton icon={Paperclip} label="添加证据" onClick={()=>{setModal('evidence');music.changePhase('investigation',{automatic:true});}}/><span className="composer-tool-separator"/>{training?<span className="model-label"><FlaskConical size={13}/>本地演练</span>:<><select aria-label="选择模型" title="沿用原会话模型，或选择其他可用模型" value={model} onChange={e=>{setModel(e.target.value);setEffort('');}}><option value="">{current.model||'沿用会话模型'}</option>{boot?.models?.map(m=><option value={m.model} key={m.model}>{m.displayName}</option>)}</select>{chosenModel&&<select className="effort-select" aria-label="思考强度" value={effort} onChange={e=>setEffort(e.target.value)}><option value="">原强度</option>{chosenModel.supportedReasoningEfforts?.map(e=><option key={e.reasoningEffort} value={e.reasoningEffort}>{e.reasoningEffort}</option>)}</select>}</>}</div><div className="send-controls"><span className="input-hint">Shift ↵ 换行</span>{running?<button className="stop-button" onClick={stop}><Square size={13} fill="currentColor"/>暂停</button>:<button className={`send-button ${action==='object'?'red':''}`} onClick={send} disabled={sending||(!training&&connection.state!=='connected')||(action==='chat'&&!draft.trim()&&!evidenceIds.length)} aria-label={action==='chat'?'发送陈述':`发送${actionLabels[action]}`}>{sending?<LoaderCircle size={15} className="spin"/>:<ArrowUpRight size={17}/>}<span>{sending?'提交中':action==='chat'?'发送':actionLabels[action]}</span></button>}</div></div>
@@ -195,9 +207,10 @@ export default function App() {
 
     {toast&&<div className="toast" role="status"><Check size={16}/>{toast}</div>}
     <ObjectionEffect effect={burst}/>
+    <MentorPanel open={mentorOpen} onClose={()=>setMentorOpen(false)} sourceId={current?.id||"general"} material={teachingMaterial} connection={connection}/>
     {(modal==='evidence'||modal?.type==='quoteEvidence')&&<EvidenceForm initial={modal.initial} onClose={()=>setModal(null)} onSubmit={addEvidence}/>}
     {modal==='new'&&<NewCase cwd={boot?.cwd||''} models={boot?.models||[]} onClose={()=>setModal(null)} onSubmit={async input=>{const r=await api('/threads',{method:'POST',body:input});await loadThreads();await openCase(r.thread.id);}}/>}
-    {evidenceDetail&&<Modal title={evidenceDetail.title} kicker="EXHIBIT · EVIDENCE" onClose={()=>setEvidenceDetail(null)} wide><div className="evidence-detail-meta"><span>{evidenceDetail.source}</span><span>{new Date(evidenceDetail.createdAt).toLocaleString('zh-CN')}</span></div>{evidenceDetail.kind==='image'?<img className="evidence-detail-image" src={evidenceDetail.content} alt={evidenceDetail.title}/>:<pre className="evidence-detail-text">{evidenceDetail.content}</pre>}<div className="evidence-hash">SHA-256 · {evidenceDetail.hash}</div><div className="modal-actions"><button className="danger-link" onClick={()=>removeEvidence(evidenceDetail)}><Trash2 size={14}/>移除证据</button><button className="primary-button" onClick={()=>{if(!evidenceIds.includes(evidenceDetail.id))toggleEvidence(evidenceDetail.id);setEvidenceDetail(null);notify('已加入本次出示');}}>加入本次出示<Check size={15}/></button></div></Modal>}
+    {evidenceDetail&&<EvidenceViewer evidence={evidenceDetail} onClose={()=>setEvidenceDetail(null)} onRemove={()=>removeEvidence(evidenceDetail)} onPresent={()=>{if(!evidenceIds.includes(evidenceDetail.id))toggleEvidence(evidenceDetail.id);setEvidenceDetail(null);notify('已加入本次出示');}} onTeach={()=>{openMentor({title:evidenceDetail.title,text:evidenceDetail.kind==='image'?'请结合这张图片解释证据中的关键内容。':evidenceDetail.content,source:evidenceDetail.source,...(evidenceDetail.kind==='image'?{image:evidenceDetail.content}:{})});setEvidenceDetail(null);}}/>}
     {modal==='help'&&<Modal title="你的第一份庭审指南" kicker="HOW TO CROSS-EXAMINE" onClose={()=>setModal(null)}><div className="guide-steps"><div><span>01</span><section><h3>从一句话开始</h3><p>点选 Codex 的任意一句证言，也可以用鼠标划选其中一部分。原句会出现在输入框上方。</p></section></div><div><span>02</span><section><h3>追问，或者出示证据</h3><p>追问它的依据与前提；把截图、日志或代码收录到右侧，勾选后随质询发送。</p></section></div><div><span>03</span><section><h3>异议！让结论接受检验</h3><p>说明你发现的矛盾，点击发送异议。Codex 应根据证据维持、修正或保留判断。</p></section></div><div><span>04</span><section><h3>给这次复核留一份记录</h3><p>原证言不会被改写。右侧「质询记录」可定位新回复，并由你标记复核结果。</p></section></div></div><div className="guide-note"><Link2 size={17}/><p>真实会话沿用本机 Codex。两个客户端同时写入同一会话时，以 Codex 的占用保护为准。桌面专属插件工具不一定能在此客户端使用。</p></div><div className="modal-actions"><span className="muted">Enter 发送 · Shift + Enter 换行 · Esc 取消选句</span><button className="primary-button" onClick={()=>setModal(null)}>我准备好了<ArrowRight size={16}/></button></div></Modal>}
     {(modal==='settings'||modal?.type==='settings')&&<CourtSettings onClose={()=>setModal(null)} initialTab={modal.tab||'performance'} music={music} sound={sound} effects={effects} setSound={value=>{setSound(value);localStorage.setItem('court:sound',String(value));if(value)playAccent('press');}} setEffects={value=>{setEffects(value);localStorage.setItem('court:effects',String(value));}} previewEffect={showEffect} connection={connection} boot={boot} reconnect={reconnect} running={running} sending={sending} release={async()=>{try{await api('/disconnect',{method:'POST',body:{}});setConnection({state:'disconnected'});setModal(null);notify('本客户端已断开，可以回到官方 Codex 继续。');}catch(e){notify(e.message);}}}/>}
   </div>;

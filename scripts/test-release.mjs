@@ -4,7 +4,7 @@ import { mkdtemp, mkdir, rm, writeFile, readdir } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import assert from 'node:assert/strict';
-const root=path.resolve(process.argv[2]||'.local/releases/codex-court-1.2.0-win-x64');
+const root=path.resolve(process.argv[2]||'.local/releases/codex-court-1.3.0-win-x64');
 const temp=await mkdtemp(path.join(os.tmpdir(),'court-release-test-'));
 const base='http://127.0.0.1:4517';
 const results=path.resolve('test-results');await mkdir(results,{recursive:true});
@@ -18,7 +18,7 @@ try{
   for(let n=0;n<80;n++){try{if((await fetch(base+'/api/health')).ok)break;}catch{}if(n===79)throw new Error('Release server unavailable: '+log);await new Promise(r=>setTimeout(r,100));}
   const boot=await(await fetch(base+'/api/bootstrap')).json();
   const library=await(await fetch(base+'/api/music',{headers:{'X-Court-Token':boot.token}})).json();
-  assert.equal(library.tracks.length,8);assert.equal(library.settings.bindings.length,8);assert.equal(library.settings.version,'逆转裁判 4');assert.equal(library.settings.enabled,true);
+  assert.equal(library.tracks.length,8);assert.equal(library.settings.bindings.length,9);assert.equal(library.settings.version,'逆转裁判 4');assert.equal(library.settings.enabled,true);
   for(const [name,exe] of [['chrome','C:/Program Files/Google/Chrome/Application/chrome.exe'],['edge','C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe']]){
     const errors=[];context=await chromium.launchPersistentContext(path.join(temp,name),{executablePath:exe,headless:true,viewport:{width:1512,height:1000},locale:'zh-CN',args:['--mute-audio','--no-first-run','--no-default-browser-check']});
     const page=await context.newPage();page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error')errors.push(m.text());});

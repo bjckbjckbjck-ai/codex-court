@@ -23,7 +23,7 @@ export class CodexRpc extends EventEmitter {
       if (msg.error) { const error = new Error(msg.error.message); error.code = msg.error.code; entry.reject(error); }
       else entry.resolve(msg.result);
     });
-    this.info = await this.call('initialize', { clientInfo: { name: 'codex_court', title: 'Codex Court', version: '1.2.0' }, capabilities: { experimentalApi: true } });
+    this.info = await this.call('initialize', { clientInfo: { name: 'codex_court', title: 'Codex Court', version: '1.3.0' }, capabilities: { experimentalApi: true } });
     this.send({ method: 'initialized', params: {} });
     return this.info;
   }

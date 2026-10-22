@@ -3,10 +3,10 @@ import { X, Check, FileText, Image, Link, Upload, ArrowUpRight, CornerDownRight,
 import { api, markdown, blocks, plain, actionLabels } from './lib.js';
 
 export function IconButton({ icon: Icon, label, ...props }) { return <button className="icon-button" title={label} aria-label={label} {...props}><Icon size={17}/></button>; }
-export function Modal({ title, kicker, children, onClose, wide = false }) {
+export function Modal({ title, kicker, children, onClose, wide = false, className = '' }) {
   const ref = useRef();
   useEffect(() => { const previous = document.activeElement; ref.current.showModal(); return () => { if (previous instanceof HTMLElement) previous.focus(); }; }, []);
-  return <dialog ref={ref} className={`modal ${wide ? 'wide' : ''}`} onCancel={onClose} onClick={e => { if (e.target === ref.current) onClose(); }}>
+  return <dialog ref={ref} className={`modal ${wide ? 'wide' : ''} ${className}`} onCancel={onClose} onClick={e => { if (e.target === ref.current) onClose(); }}>
     <div className="modal-top"><div><span className="eyebrow">{kicker || 'COURT RECORD'}</span><h2>{title}</h2></div><IconButton icon={X} label="关闭对话框" onClick={onClose}/></div>
     {children}
   </dialog>;

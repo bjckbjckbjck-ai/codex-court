@@ -2,6 +2,7 @@ node_modules/
 dist/
 .generated/
 .local/
+*.mentor.json
 test-results/
 *.log
 key.txt

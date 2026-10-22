@@ -15,7 +15,7 @@ test('music profiles persist, never overwrite assigned slots, and clear deleted 
     assert.equal(store.snapshot().settings.enabled,false);
     await Promise.all([
       store.import(wave(),{name:'尋問 ～ モデラート 2001.wav',version:'逆转裁判 1',assign:true}),
-      store.import(wave(),{name:'Cross-Examination - Allegro.wav',version:'逆转裁判 1',assign:true}),
+      store.import(wave(),{name:'Cross-Examination - Moderato.wav',version:'逆转裁判 1',assign:true}),
     ]);
     let state=store.snapshot();assert.equal(state.tracks.length,2);assert.equal(state.settings.bindings.length,1);
     const first=state.settings.bindings[0].trackId;
@@ -55,5 +55,19 @@ test('audio format detection and HTTP ranges support seeking without arbitrary r
   const store=new MusicStore('unused');assert.throws(()=>store.pathFor({id:'../../private',ext:'wav'}),/无效/);
 });
 test('phase suggestions understand Chinese, Japanese, and English without inventing a category',()=>{
-  for(const [name,expected] of [['追求 ～ 追いつめられて','pursuit'],['Phoenix Wright - Objection!','objection'],['尋問 ～ アレグロ 2004','questioning'],['Court is Now in Session','opening'],['捜査 ～ 序盤','investigation'],['逻辑','thinking'],['法廷休憩室','recess'],['Victory!','victory'],['Guilty Love','']])assert.equal(inferPhase(name),expected);
+  for(const [name,expected] of [['追求 ～ 追いつめられて','pursuit'],['Phoenix Wright - Objection!','objection'],['尋問 ～ アレグロ 2004','questioning_fast'],['询问（快）','questioning_fast'],['Cross-Examination - Allegro','questioning_fast'],['询问（慢）','questioning'],['Court is Now in Session','opening'],['捜査 ～ 序盤','investigation'],['逻辑','logic'],['法廷休憩室','recess'],['Victory!','victory'],['Guilty Love','']])assert.equal(inferPhase(name),expected);
+});
+test('legacy logic assignment migrates once without changing preferences or refilling cleared slots',async()=>{
+  const temp=await mkdtemp(path.join(os.tmpdir(),'court-music-unit-'));
+  try{
+    const store=await new MusicStore(temp).load();
+    await store.import(wave(),{name:'old-thinking.wav',version:'My music',phase:'thinking',assign:true});
+    const legacy=store.snapshot();delete legacy.phaseSchemaVersion;legacy.settings.volume=.18;legacy.settings.enabled=false;
+    await writeFile(store.file,JSON.stringify(legacy));
+    const reopened=await new MusicStore(temp).load();const migrated=reopened.snapshot();
+    assert.equal(migrated.settings.bindings.find(b=>b.phase==='logic').trackId,migrated.tracks[0].id);
+    assert.equal(migrated.settings.enabled,false);assert.equal(migrated.settings.volume,.18);
+    await reopened.settings({binding:{version:'My music',phase:'logic',trackId:''}});
+    const again=await new MusicStore(temp).load();assert.equal(again.snapshot().settings.bindings.some(b=>b.phase==='logic'),false);
+  }finally{assert.ok(path.basename(temp).startsWith('court-music-unit-'));await rm(temp,{recursive:true,force:true});}
 });

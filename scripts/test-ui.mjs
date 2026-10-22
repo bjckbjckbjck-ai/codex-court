@@ -104,9 +104,9 @@ try {
     await page.getByLabel('导入到版本',{exact:true}).fill('逆转裁判 2');
     await page.getByLabel('导入音乐文件',{exact:true}).setInputFiles([questionFile,pursuitFile]);
     await page.getByText(/已收录 2 首音乐/).waitFor();
-    const questionId=await page.getByLabel('询问配乐',{exact:true}).inputValue(), pursuitId=await page.getByLabel('追求配乐',{exact:true}).inputValue();
+    const questionId=await page.getByLabel('询问（慢）配乐',{exact:true}).inputValue(), pursuitId=await page.getByLabel('追求配乐',{exact:true}).inputValue();
     assert.ok(questionId);assert.ok(pursuitId);assert.notEqual(questionId,pursuitId);
-    await page.getByRole('button',{name:'试听询问配乐',exact:true}).click();
+    await page.getByRole('button',{name:'试听询问（慢）配乐',exact:true}).click();
     await page.waitForFunction(()=>document.querySelector('audio').currentTime>0.15&&!document.querySelector('audio').paused);
     assert.equal(await page.locator('audio').getAttribute('data-track-id'),questionId);
     assert.equal(await page.getByRole('switch',{name:'背景音乐',exact:true}).getAttribute('aria-checked'),'false');
@@ -114,7 +114,7 @@ try {
     await page.waitForFunction(()=>document.querySelector('audio').paused);
     await page.getByLabel('异议配乐',{exact:true}).selectOption(pursuitId);
     await page.getByLabel('开庭配乐',{exact:true}).selectOption(questionId);
-    await page.getByRole('button',{name:'切换到询问',exact:true}).click();
+    await page.getByRole('button',{name:'切换到询问（慢）',exact:true}).click();
     await page.getByRole('switch',{name:'背景音乐',exact:true}).click();
     await page.waitForFunction(()=>!document.querySelector('audio').paused);
     await page.getByRole('button',{name:'切换到追求',exact:true}).click();
@@ -131,8 +131,8 @@ try {
     const invalidRange=await fetch(`${base}/api/music/tracks/${questionId}/audio`,{headers:{'X-Court-Token':bootstrap.token,Range:'bytes=999999999-'}});assert.equal(invalidRange.status,416);
     await page.getByRole('button',{name:'关闭对话框',exact:true}).click();
     await page.reload();await page.getByRole('button',{name:'背景音乐设置',exact:true}).click();
-    await page.getByLabel('询问配乐',{exact:true}).waitFor();
-    assert.equal(await page.getByLabel('询问配乐',{exact:true}).inputValue(),questionId);
+    await page.getByLabel('询问（慢）配乐',{exact:true}).waitFor();
+    assert.equal(await page.getByLabel('询问（慢）配乐',{exact:true}).inputValue(),questionId);
     assert.equal(await page.getByRole('slider',{name:'音乐音量',exact:true}).inputValue(),'22');
     // Different version profiles keep independent bindings.
     await page.getByLabel('配乐版本',{exact:true}).selectOption('逆转裁判 1');
@@ -150,7 +150,7 @@ try {
     await page.getByRole('button',{name:'背景音乐设置',exact:true}).click();
     await page.getByRole('button',{name:'暂停背景音乐',exact:true}).click();
     await page.waitForFunction(()=>document.querySelector('audio').paused);
-    await page.getByRole('button',{name:'试听询问配乐',exact:true}).click();
+    await page.getByRole('button',{name:'试听询问（慢）配乐',exact:true}).click();
     await page.waitForFunction(()=>!document.querySelector('audio').paused);
     await page.getByRole('button',{name:'结束试听',exact:true}).click();
     await page.waitForFunction(()=>document.querySelector('audio').paused);
