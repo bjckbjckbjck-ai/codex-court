@@ -30,6 +30,8 @@ Protocol reference: https://learn.chatgpt.com/docs/app-server
 
 Mentor thread IDs, learning preferences and user-edited cards persist in `DATA_FILE + '.mentor.json'`. Native Codex retains the actual teaching conversation. Selected context is explicitly quoted material; optional evidence images use real image inputs. SSE events carry a mentor-session identifier so early streaming replies and terminal responses remain scoped correctly. Training uses a clearly labeled deterministic fixture, with no model calls.
 
-Audio focus is separate from the underlying courtroom phase. Evidence inspection and the mentor panel request the logic phase only when automatic music is enabled; closing them reveals the current underlying phase. Pause and mute settings continue to apply. Fast questioning has its own slot; existing slow questioning IDs remain compatible.
+The 1.3.1 UI uses a small draggable character and a bounded speech bubble showing the latest teaching turn. The overlay is pointer-transparent outside the character and bubble. Position is stored locally, clamped on resize, and the bubble flips sides near viewport edges. Native dialogs temporarily hide the assistant. Existing cards/preferences/history remain intact in the backend; their management panels are hidden in this simplified interface. A new reply can open the bubble once per turn without repeatedly reopening it during streaming.
+
+Audio focus is separate from the underlying courtroom phase. Evidence inspection and the expanded mentor bubble request the logic phase only when automatic music is enabled; closing them reveals the current underlying phase. A collapsed character does not request logic music. Pause and mute settings continue to apply. Fast questioning has its own slot; existing slow questioning IDs remain compatible.
 
 Windows data directory: https://learn.chatgpt.com/docs/windows/windows-app

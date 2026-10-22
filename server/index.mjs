@@ -176,7 +176,7 @@ const server = http.createServer(async (req, res) => {
   res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; media-src 'self' blob:; frame-ancestors 'none'; base-uri 'none'; object-src 'none'");
   const url = new URL(req.url, `http://${expected}`), pathname = url.pathname;
   try {
-    if (pathname === '/api/health') return sendJson(res, 200, { app: 'codex-court', version: '1.3.0' });
+    if (pathname === '/api/health') return sendJson(res, 200, { app: 'codex-court', version: '1.3.1' });
     if (pathname === '/api/bootstrap' && req.method === 'GET') {
       res.setHeader('Set-Cookie', `court_session=${token}; HttpOnly; SameSite=Strict; Path=/`);
       return sendJson(res, 200, { token, connection, account, models: modelList, cwd: root, testMode: isTest, active: Object.fromEntries(active), approvals: [...approvals.values()] });

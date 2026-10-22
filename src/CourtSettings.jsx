@@ -25,7 +25,7 @@ export function CourtSettings({ onClose, initialTab = 'performance', music, soun
     </div>}
     {tab === 'music' && <MusicSettings music={music}/>}
     {tab === 'sources' && <div className="music-sources"><p className="settings-description">按版本整理的官方入口。原声专辑与游戏内音乐鉴赏已分别标明；这里不直接播放网页音乐。取得音频文件后，在「背景音乐」中导入。</p><div className="source-grid">{MUSIC_SOURCES.map(source => <a href={source.url} key={source.title} target="_blank" rel="noreferrer noopener"><span className="source-type">{source.type}</span><strong>{source.title}<ArrowUpRight size={18}/></strong><p>{source.detail}</p><small>{new URL(source.url).hostname}</small></a>)}</div><p className="settings-footnote">来源：Capcom 官方商店及支持页面 · 整理于 2026-10-20 · 默认配乐：逆转裁判 4 · 可自行导入更多版本</p></div>}
-    <div className="settings-version">CODEX COURT · LOCAL EDITION 1.3</div>
+    <div className="settings-version">CODEX COURT · LOCAL EDITION 1.3.1</div>
   </Modal>;
 }
 

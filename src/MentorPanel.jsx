@@ -1,31 +1,57 @@
-import React,{useEffect,useRef,useState} from 'react';
-import { X,BookOpen,BookmarkPlus,GraduationCap,Send,Square,Lightbulb,ChevronDown,ArrowRight,Check,Trash2,Pencil,RefreshCw,FolderOpen } from 'lucide-react';
+import React,{useEffect,useLayoutEffect,useRef,useState} from 'react';
+import { X,Send,Square,Lightbulb,Minus } from 'lucide-react';
 import { api,markdown,mergeTurns,updateTurn } from './lib.js';
-import { ApprovalCard,ToolActivity } from './components.jsx';
+import { ApprovalCard } from './components.jsx';
 
-const MODES=[['explain','讲懂它'],['simplify','再简单一点'],['hint','只给提示'],['step','一步步带我'],['quiz','考考我'],['recall','帮我记住']];
-const userText=item=>(item.content||[]).filter(c=>c.type==='text').map(c=>c.text.split('\n\n<mentor_context>')[0]).join('\n');
-export function MentorPanel({open,onClose,sourceId,material,connection}){
-  const [session,setSession]=useState(null),[turns,setTurns]=useState([]),[cursor,setCursor]=useState(null),[active,setActive]=useState(null),[approvals,setApprovals]=useState([]);
-  const [loading,setLoading]=useState(false),[sending,setSending]=useState(false),[error,setError]=useState(''),[draft,setDraft]=useState(''),[mode,setMode]=useState('explain'),[tab,setTab]=useState('chat');
-  const [attach,setAttach]=useState(true),[editing,setEditing]=useState(null),[saving,setSaving]=useState(false),[revealed,setRevealed]=useState({}),[settings,setSettings]=useState(false),[level,setLevel]=useState('beginner'),[goal,setGoal]=useState(''),[cwd,setCwd]=useState('');
-  const idRef=useRef(null),threadRef=useRef(null),terminal=useRef(new Set()),scroll=useRef(),stick=useRef(true),serial=useRef(0),input=useRef();
-  const busy=!!active||sending;
-  function applySnapshot(r,older=false){setSession(r.session);idRef.current=r.session.id;threadRef.current=r.session.threadId;setTurns(old=>older?mergeTurns(r.turns,old):mergeTurns(old,r.turns));setCursor(r.nextCursor);setActive(r.activeTurn);setApprovals(r.approvals||[]);}
+const POSITION_KEY='court:mentor-position',ACTOR={width:104,height:148},GAP=12;
+const viewport=()=>({width:window.visualViewport?.width||innerWidth,height:window.visualViewport?.height||innerHeight,left:window.visualViewport?.offsetLeft||0,top:window.visualViewport?.offsetTop||0});
+function clampPosition(p,v){return {x:Math.max(GAP,Math.min(v.width-ACTOR.width-GAP,p.x)),y:Math.max(GAP,Math.min(v.height-ACTOR.height-GAP,p.y))};}
+function initialPosition(){const v=viewport();try{const p=JSON.parse(localStorage.getItem(POSITION_KEY));if(Number.isFinite(p?.x)&&Number.isFinite(p?.y))return clampPosition(p,v);}catch{}return clampPosition({x:24,y:v.height-ACTOR.height-72},v);}
+function rememberPosition(p){try{localStorage.setItem(POSITION_KEY,JSON.stringify(p));}catch{}}
+const userText=item=>(item?.content||[]).filter(c=>c.type==='text').map(c=>c.text.split('\n\n<mentor_context>')[0].replace(/^【(?:讲懂它|再简单一点|只给提示|一步步带我|考考我|帮我记住)】/,'')).join('\n');
+
+export function MentorPanel({open,onClose,sourceId,material,connection,requestKey,onDialogueChange,obscured=false}){
+  const [session,setSession]=useState(null),[turns,setTurns]=useState([]),[active,setActive]=useState(null),[approvals,setApprovals]=useState([]);
+  const [loading,setLoading]=useState(false),[sending,setSending]=useState(false),[error,setError]=useState(''),[draft,setDraft]=useState(''),[attach,setAttach]=useState(true);
+  const [expanded,setExpanded]=useState(true),[position,setPosition]=useState(initialPosition),[view,setView]=useState(viewport),[dragging,setDragging]=useState(false),[bubbleHeight,setBubbleHeight]=useState(300);
+  const idRef=useRef(null),threadRef=useRef(null),terminal=useRef(new Set()),scroll=useRef(),stick=useRef(true),serial=useRef(0),input=useRef(),actor=useRef(),bubble=useRef(),drag=useRef(null),positionRef=useRef(position),previousSource=useRef(sourceId),replyShown=useRef(new Set()),suppressClick=useRef(false),openRef=useRef(open);
+  openRef.current=open;positionRef.current=position;
+  const busy=!!active||sending,visible=open&&expanded&&!obscured;
+  const latestTurn=turns.at(-1),items=latestTurn?.items||[];
+  const answer=items.filter(i=>i.type==='agentMessage'&&i.text).map(i=>i.text).join('\n\n');
+  const question=userText(items.find(i=>i.type==='userMessage'));
+  const connected=session?.demo||connection.state==='connected';
+  const canAsk=!!session&&!busy&&!loading&&connected;
+  function applySnapshot(r){setSession(r.session);idRef.current=r.session.id;threadRef.current=r.session.threadId;setTurns(old=>mergeTurns(old,r.turns));setActive(r.activeTurn);setApprovals(r.approvals||[]);}
   useEffect(()=>{
+    if(previousSource.current!==sourceId){previousSource.current=sourceId;setDraft('');setExpanded(false);}
     if(!open)return;
     const n=++serial.current;let disposed=false;
-    idRef.current=null;threadRef.current=null;setLoading(true);setError('');setSession(null);setTurns([]);setActive(null);setDraft('');setEditing(null);setApprovals([]);setSettings(false);setTab('chat');
+    idRef.current=null;threadRef.current=null;setLoading(true);setError('');setSession(null);setTurns([]);setActive(null);setSending(false);setApprovals([]);
     api('/mentor/sessions',{method:'POST',body:{sourceId:sourceId||'general'}}).then(r=>{
-      if(disposed||serial.current!==n)return;applySnapshot(r);setLevel(r.session.preferences.level);setGoal(r.session.preferences.goal);setCwd(r.session.cwd);
+      if(disposed||serial.current!==n)return;
+      for(const turn of r.turns)if(turn.items?.some(i=>i.type==='agentMessage'&&i.text))replyShown.current.add(turn.id);
+      applySnapshot(r);
     }).catch(e=>{if(!disposed)setError(e.message);}).finally(()=>{if(!disposed)setLoading(false);});
     return()=>{disposed=true;};
   },[open,sourceId]);
-  useEffect(()=>{setAttach(true);},[material?.text]);
+  useEffect(()=>{if(open)setExpanded(true);},[open,requestKey]);
+  useEffect(()=>{setAttach(true);},[material?.text,material?.image]);
+  useEffect(()=>{onDialogueChange(visible);return()=>onDialogueChange(false);},[visible,onDialogueChange]);
+  useEffect(()=>{
+    const resize=()=>{const v=viewport();setView(v);setPosition(p=>clampPosition(p,v));};
+    window.addEventListener('resize',resize);window.visualViewport?.addEventListener('resize',resize);window.visualViewport?.addEventListener('scroll',resize);
+    return()=>{window.removeEventListener('resize',resize);window.visualViewport?.removeEventListener('resize',resize);window.visualViewport?.removeEventListener('scroll',resize);};
+  },[]);
+  useLayoutEffect(()=>{
+    if(!visible||!bubble.current)return;
+    const observer=new ResizeObserver(([entry])=>setBubbleHeight(entry.target.getBoundingClientRect().height));
+    observer.observe(bubble.current);return()=>observer.disconnect();
+  },[visible]);
   useEffect(()=>{
     const receive=e=>{
       const m=e.detail;
-      if(m.type==='connection'&&m.connection.state==='error'){setActive(null);setError('导师连接中断，可重新打开导师恢复历史。');return;}
+      if(m.type==='connection'&&m.connection.state==='error'){setActive(null);if(idRef.current)setError('导师连接中断，重新打开助手可恢复对话。');return;}
       if(m.type==='approval'&&m.request.params.threadId===threadRef.current){setApprovals(old=>[...old.filter(a=>a.id!==m.request.id),m.request]);return;}
       if(m.type==='approvalResolved'){setApprovals(old=>old.filter(a=>String(a.id)!==String(m.id)));return;}
       if(m.type!=='codex'||!idRef.current||(m.mentorSessionId!==idRef.current&&m.params?.threadId!==threadRef.current))return;
@@ -37,46 +63,78 @@ export function MentorPanel({open,onClose,sourceId,material,connection}){
     };
     window.addEventListener('court-event',receive);return()=>window.removeEventListener('court-event',receive);
   },[]);
-  useEffect(()=>{if(stick.current&&scroll.current)scroll.current.scrollTop=scroll.current.scrollHeight;},[turns,active]);
-  useEffect(()=>{if(open&&!loading)input.current?.focus({preventScroll:true});},[open,loading]);
-  async function ask(custom={}){
-    if(!session||busy)return;const id=session.id;
-    const text=custom.text??draft,teachingMode=custom.mode||mode,context=custom.context??(attach?material:null);
-    if(!text.trim()&&!context?.text&&!turns.length)return;
-    setSending(true);setError('');setTab('chat');stick.current=true;
+  useEffect(()=>{
+    if(answer&&latestTurn&&!replyShown.current.has(latestTurn.id)){
+      replyShown.current.add(latestTurn.id);if(openRef.current)setExpanded(true);
+    }
+    if(stick.current&&scroll.current)scroll.current.scrollTop=scroll.current.scrollHeight;
+  },[turns,active,answer,latestTurn]);
+  useEffect(()=>{
+    if(!visible)return;
+    const escape=e=>{if(e.key==='Escape'&&!document.querySelector('dialog[open]')){e.preventDefault();e.stopPropagation();setExpanded(false);actor.current?.focus({preventScroll:true});}};
+    window.addEventListener('keydown',escape,true);return()=>window.removeEventListener('keydown',escape,true);
+  },[visible]);
+  async function ask(hint=false){
+    if(!canAsk)return;const id=session.id,n=serial.current,text=hint?'再给我一条关键提示，先不要揭晓答案。':draft,context=attach?material:null;
+    if(!text.trim()&&!context?.text)return;
+    setSending(true);setError('');setExpanded(true);stick.current=true;
     try{
-      const r=await api(`/mentor/sessions/${id}/turn`,{method:'POST',body:{text,mode:teachingMode,context}});
-      if(idRef.current!==id)return;
-      threadRef.current=r.threadId;setSession(s=>({...s,threadId:r.threadId}));setTurns(old=>mergeTurns(old,[r.turn]));setActive(r.turn.status==='inProgress'&&!terminal.current.has(r.turn.id)?r.turn.id:null);setDraft('');
-    }catch(e){if(idRef.current===id)setError(e.message);}finally{setSending(false);}
+      const r=await api(`/mentor/sessions/${id}/turn`,{method:'POST',body:{text,mode:hint?'hint':'explain',context}});
+      if(idRef.current!==id||serial.current!==n)return;
+      threadRef.current=r.threadId;setSession(s=>({...s,threadId:r.threadId}));setTurns(old=>mergeTurns(old,[r.turn]));setActive(r.turn.status==='inProgress'&&!terminal.current.has(r.turn.id)?r.turn.id:null);if(!hint)setDraft('');
+    }catch(e){if(idRef.current===id&&serial.current===n)setError(e.message);}finally{if(serial.current===n)setSending(false);}
   }
-  async function refresh(older=false){const id=idRef.current;if(!id)return;try{const r=await api(`/mentor/sessions/${id}${older&&cursor?'?cursor='+encodeURIComponent(cursor):''}`);if(idRef.current===id)applySnapshot(r,older);}catch(e){setError(e.message);}}
   async function stop(){try{await api(`/mentor/sessions/${session.id}/interrupt`,{method:'POST',body:{}});}catch(e){setError(e.message);}}
-  async function savePreferences(e){e.preventDefault();const id=session.id;setSaving(true);try{const r=await api(`/mentor/sessions/${id}/preferences`,{method:'PATCH',body:{level,goal,...(session.sourceId==='general'&&!session.threadId?{cwd}:{})}});if(idRef.current!==id)return;applySnapshot(r);setSettings(false);}catch(e){if(idRef.current===id)setError(e.message);}finally{setSaving(false);}}
-  async function saveCard(e){e.preventDefault();const id=session.id;setSaving(true);try{const card=await api(`/mentor/sessions/${id}/cards${editing.id?'/'+editing.id:''}`,{method:editing.id?'PATCH':'POST',body:editing});if(idRef.current!==id)return;setSession(s=>({...s,cards:[...s.cards.filter(c=>c.id!==card.id),card]}));setEditing(null);setTab('cards');}catch(e){if(idRef.current===id)setError(e.message);}finally{setSaving(false);}}
-  async function patchCard(card,patch){const id=session.id;try{const updated=await api(`/mentor/sessions/${id}/cards/${card.id}`,{method:'PATCH',body:patch});if(idRef.current===id)setSession(s=>({...s,cards:s.cards.map(c=>c.id===card.id?updated:c)}));}catch(e){if(idRef.current===id)setError(e.message);}}
-  function collect(text){setEditing({title:material?.title?.slice(0,120)||'今天弄懂的一件事',content:text,source:material?.source||session?.title||'',status:'learning'});setTab('cards');}
-  if(!open)return null;
-  return <section className="mentor-panel" aria-label="成步堂导师" role="region" onKeyDown={e=>{if(e.key==='Escape'){e.stopPropagation();onClose();}}}>
-    <header className="mentor-hero"><div className="mentor-intro"><span className="mentor-eyebrow">NARUHODO · MENTOR</span><h2>别急，我们一起想。</h2><p>一个词，一条线索。<br/>直到你能用自己的话讲出来。</p><span className="mentor-name">成步堂龙一 <small>四代 · AI 导师</small></span></div><img src="/assets/phoenix-mentor.png" alt="戴针织帽、穿蓝色连帽衫的四代成步堂，微笑着托腮思考"/><button className="mentor-close" aria-label="收起导师" onClick={onClose}><X size={18}/></button></header>
-    <div className="mentor-session"><span><GraduationCap size={15}/>{session?.title||'正在打开学习档案…'}</span><button aria-label="学习偏好" onClick={()=>setSettings(!settings)} disabled={!session}><ChevronDown size={15}/></button></div>
-    {session?.demo&&<div className="mentor-demo">本地教学示范 · 预设回复，不调用模型。实际项目中使用你的 Codex。</div>}
-    {settings&&session&&<form className="mentor-preferences" onSubmit={savePreferences}><label>我的基础<select aria-label="学习基础" value={level} onChange={e=>setLevel(e.target.value)}><option value="beginner">刚开始接触，先讲白话</option><option value="familiar">有些基础，结合项目讲</option><option value="advanced">已有经验，深入机制和边界</option></select></label><label>这次想学会什么<input aria-label="学习目标" value={goal} maxLength={600} onChange={e=>setGoal(e.target.value)} placeholder="例如：能独立看懂这个项目的登录流程"/></label>{session.sourceId==='general'&&!session.threadId&&<label>要阅读的本地项目<input aria-label="导师项目目录" value={cwd} onChange={e=>setCwd(e.target.value)}/><small>没有代码问题时直接提问即可。对话开始后固定此目录。</small></label>}<button className="primary-button" disabled={saving}>保存学习偏好</button></form>}
-    <div className="mentor-tabs" role="tablist" aria-label="导师内容"><button role="tab" aria-selected={tab==='chat'} onClick={()=>setTab('chat')}><Lightbulb size={15}/>一起理解</button><button role="tab" aria-selected={tab==='cards'} onClick={()=>setTab('cards')}><BookOpen size={15}/>知识卡 <span>{session?.cards.length||0}</span></button><button aria-label="刷新教学对话" onClick={()=>refresh()} disabled={loading||!session}><RefreshCw size={14}/></button></div>
-    {error&&<div className="mentor-error" role="alert">{error}</div>}
-    <div className="mentor-scroll" ref={scroll} onScroll={e=>{stick.current=e.currentTarget.scrollHeight-e.currentTarget.scrollTop-e.currentTarget.clientHeight<100;}}>
-      {loading?<p className="mentor-empty">正在找回你的学习进度…</p>:tab==='chat'?<>
-        {cursor&&<button className="load-more" onClick={()=>refresh(true)}>读取更早的教学对话</button>}
-        {!turns.length&&<div className="mentor-welcome"><span>先从卡住的地方开始</span><h3>不必一下记住全部。</h3><p>把陌生的词、绕不过去的代码，或工作里复杂的一段话交给我。我们先找出关键，再一步步接起来。</p><div>{['这个专业词到底是什么意思？','带我读懂项目里的这段逻辑','我总记不住，帮我建立一个记忆方法'].map(t=><button key={t} onClick={()=>{setDraft(t);input.current?.focus();}}>{t}<ArrowRight size={13}/></button>)}</div></div>}
-        {turns.map(turn=><div key={turn.id} className="mentor-turn">{(turn.items||[]).filter(i=>i.type==='agentMessage'||i.type==='userMessage').map(item=><article key={item.id} className={`mentor-message ${item.type==='userMessage'?'student':'teacher'}`}><div className="mentor-speaker">{item.type==='userMessage'?'你':'成步堂 · 导师'}</div><div className="markdown" dangerouslySetInnerHTML={{__html:markdown(item.type==='userMessage'?userText(item):item.text)}}/>{item.type==='agentMessage'&&item.text&&turn.status!=='inProgress'&&<button className="mentor-collect" onClick={()=>collect(item.text)}><BookmarkPlus size={14}/>整理成知识卡</button>}</article>)}<ToolActivity items={turn.items||[]}/>{turn.status==='interrupted'&&<small className="mentor-interrupted">本次讲解已暂停</small>}</div>)}
+  function beginDrag(e){
+    if(e.button!==0||!e.isPrimary)return;
+    suppressClick.current=false;drag.current={pointerId:e.pointerId,startX:e.clientX,startY:e.clientY,origin:positionRef.current,moved:false};e.currentTarget.setPointerCapture(e.pointerId);
+  }
+  function moveDrag(e){
+    const d=drag.current;if(!d||d.pointerId!==e.pointerId)return;
+    const dx=e.clientX-d.startX,dy=e.clientY-d.startY;
+    if(!d.moved&&Math.hypot(dx,dy)<5)return;
+    d.moved=true;suppressClick.current=true;setDragging(true);
+    const p=clampPosition({x:d.origin.x+dx,y:d.origin.y+dy},viewport());positionRef.current=p;setPosition(p);
+  }
+  function endDrag(e){
+    const d=drag.current;if(!d||d.pointerId!==e.pointerId)return;
+    if(d.moved)rememberPosition(positionRef.current);drag.current=null;setDragging(false);
+    if(e.currentTarget.hasPointerCapture(e.pointerId))e.currentTarget.releasePointerCapture(e.pointerId);
+  }
+  function moveWithKeys(e){
+    const delta={ArrowLeft:[-1,0],ArrowRight:[1,0],ArrowUp:[0,-1],ArrowDown:[0,1]}[e.key];if(!delta)return;
+    e.preventDefault();e.stopPropagation();const step=e.shiftKey?40:12,p=clampPosition({x:position.x+delta[0]*step,y:position.y+delta[1]*step},view);setPosition(p);rememberPosition(p);
+  }
+  const width=Math.min(342,view.width-GAP*2),right=position.x+ACTOR.width+GAP,left=position.x-width-GAP;
+  const side=right+width<=view.width-GAP?'right':left>=GAP?'left':'vertical';
+  const above=position.y-GAP*2,below=view.height-position.y-ACTOR.height-GAP*2,placeAbove=above>=below;
+  const maxHeight=Math.min(390,Math.max(Math.min(240,view.height-GAP*2),side==='vertical'?Math.max(above,below):view.height-GAP*2));
+  const height=Math.min(bubbleHeight,maxHeight),bubbleX=side==='right'?right:side==='left'?left:Math.max(GAP,Math.min(view.width-width-GAP,position.x));
+  const bubbleY=Math.max(GAP,Math.min(view.height-height-GAP,side==='vertical'?(placeAbove?position.y-GAP-height:position.y+ACTOR.height+GAP):position.y+ACTOR.height-height));
+  if(!open||obscured)return null;
+  return <section className={`mentor-assistant ${dragging?'is-dragging':''}`} aria-label="成步堂导师" role="region">
+    {expanded&&<div className={`mentor-bubble bubble-${side==='vertical'?(placeAbove?'above':'below'):side}`} ref={bubble} id="mentor-dialogue" style={{left:bubbleX+view.left,top:bubbleY+view.top,width,maxHeight,'--mentor-tail':`${Math.max(22,Math.min(width-22,position.x+ACTOR.width/2-bubbleX))}px`}}>
+      <header className="mentor-bubble-header"><div><b>成步堂龙一</b><span>{session?.demo?'本地教学示范':'AI 导师'}</span></div><button aria-label="收起导师对话" title="收起对话 · Esc" onClick={()=>{setExpanded(false);actor.current?.focus({preventScroll:true});}}><Minus size={17}/></button></header>
+      <div className="mentor-speech" ref={scroll} onScroll={e=>{stick.current=e.currentTarget.scrollHeight-e.currentTarget.scrollTop-e.currentTarget.clientHeight<50;}}>
+        {error&&<p className="mentor-error" role="alert">{error}</p>}
+        {question&&<p className="mentor-question" title={question}>你：{question}</p>}
+        {loading?<p className="mentor-greeting">稍等，我找找我们上次聊到哪里。</p>:answer?<div className="mentor-answer markdown" dangerouslySetInnerHTML={{__html:markdown(answer)}}/>:!busy?<p className="mentor-greeting">别急，我们一起想。<br/><span>把不懂的词或卡住的地方告诉我，<br/>先从一条线索开始。</span></p>:null}
         {approvals.map(request=><ApprovalCard key={request.id} request={request} onResolve={async(id,value)=>{await api(`/approvals/${id}`,{method:'POST',body:value});setApprovals(a=>a.filter(r=>r.id!==id));}}/>)}
-        {busy&&<div className="mentor-thinking" role="status"><i/><span>成步堂正在整理线索…</span><button onClick={stop} disabled={!active}><Square size={12}/>暂停讲解</button></div>}
-      </>:<div className="mentor-cards"><div className="mentor-cards-heading"><p>先回想，再揭开答案。<br/><small>用自己的话写下来，比背原句更牢。</small></p><button aria-label="新增知识卡" onClick={()=>setEditing({title:'',content:'',source:'',status:'learning'})}><BookmarkPlus size={18}/></button></div>
-        {editing&&<form className="knowledge-editor" onSubmit={saveCard}><label>知识点<input required maxLength={120} aria-label="知识卡标题" value={editing.title} onChange={e=>setEditing({...editing,title:e.target.value})}/></label><label>我的理解<textarea required maxLength={18000} rows={6} aria-label="知识卡内容" value={editing.content} onChange={e=>setEditing({...editing,content:e.target.value})}/></label><label>项目位置 / 来源<input maxLength={300} aria-label="知识卡来源" value={editing.source} onChange={e=>setEditing({...editing,source:e.target.value})}/></label><div><button type="button" onClick={()=>setEditing(null)}>取消</button><button className="primary-button" disabled={saving}>保存知识卡</button></div></form>}
-        {!session?.cards.length&&!editing&&<p className="mentor-empty">还没有知识卡。讲解后点“整理成知识卡”，留下真正需要记住的部分。</p>}
-        {session?.cards.slice().reverse().map(card=><article className={`knowledge-card ${card.status}`} key={card.id}><header><span>{card.status==='known'?'已掌握':'待复习'}</span><div><button aria-label={`编辑知识卡：${card.title}`} onClick={()=>setEditing({...card})}><Pencil size={13}/></button><button aria-label={`删除知识卡：${card.title}`} onClick={async()=>{try{await api(`/mentor/sessions/${session.id}/cards/${card.id}`,{method:'DELETE'});setSession(s=>({...s,cards:s.cards.filter(c=>c.id!==card.id)}));}catch(e){setError(e.message);}}}><Trash2 size={13}/></button></div></header><h3>{card.title}</h3>{card.source&&<small>{card.source}</small>}{revealed[card.id]?<div className="markdown" dangerouslySetInnerHTML={{__html:markdown(card.content)}}/>:<button className="reveal-card" onClick={()=>setRevealed(v=>({...v,[card.id]:true}))}>先试着回忆，再查看解释<ChevronDown size={14}/></button>}<footer><button disabled={busy} onClick={()=>ask({mode:'quiz',text:`围绕这张知识卡考考我：${card.title}`,context:{title:card.title,text:card.content,source:card.source}})}>让导师考我</button><button onClick={()=>patchCard(card,{status:card.status==='known'?'learning':'known'})}><Check size={13}/>{card.status==='known'?'还需复习':'我记住了'}</button></footer></article>)}
-      </div>}
+        {busy&&<div className="mentor-thinking" role="status"><i/>我在整理线索…<button onClick={stop} disabled={!active}><Square size={11}/>暂停</button></div>}
+        {latestTurn?.status==='interrupted'&&<small className="mentor-interrupted">讲解已暂停，可以接着问。</small>}
+      </div>
+      <form className="mentor-composer" onSubmit={e=>{e.preventDefault();ask();}}>
+        {material?.text&&<label className="mentor-context" title={material.text.slice(0,300)}><input type="checkbox" checked={attach} onChange={e=>setAttach(e.target.checked)}/><span>带入：{material.title}</span></label>}
+        <div className="mentor-input"><textarea ref={input} aria-label="向导师提问" rows={1} value={draft} onChange={e=>setDraft(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.nativeEvent.isComposing){e.preventDefault();ask();}}} placeholder="哪里不懂？问问我…"/><button type="submit" aria-label="请导师讲解" disabled={!canAsk||(!draft.trim()&&!(attach&&material?.text))}><Send size={16}/></button></div>
+        <div className="mentor-bubble-footer"><button type="button" disabled={!canAsk||(!turns.length&&!(attach&&material?.text))} onClick={()=>ask(true)}><Lightbulb size={13}/>继续提示</button><small>{session?.demo?'预设回复 · 不调用模型':'本机 Codex · 只读学习'}</small></div>
+      </form>
+    </div>}
+    <div className="mentor-actor-wrap" style={{left:position.x+view.left,top:position.y+view.top,width:ACTOR.width,height:ACTOR.height}}>
+      <button className="mentor-dismiss" aria-label="关闭导师助手" title="关闭助手" onClick={onClose}><X size={13}/></button>
+      <button className="mentor-actor" ref={actor} aria-label="成步堂助手，点击对话，拖动移动" aria-expanded={expanded} aria-controls="mentor-dialogue" title="点击对话 · 拖动换位置 · 方向键微调" onPointerDown={beginDrag} onPointerMove={moveDrag} onPointerUp={endDrag} onPointerCancel={endDrag} onLostPointerCapture={endDrag} onKeyDown={moveWithKeys} onClick={e=>{if(e.detail!==0&&suppressClick.current){suppressClick.current=false;return;}setExpanded(v=>!v);}}>
+        <img src="/assets/phoenix-mentor.png" alt="四代成步堂助手" draggable="false"/><span className="mentor-actor-label">{busy?'思考中…':expanded?'成步堂':'问问我'}</span>
+        {busy&&<i className="mentor-actor-busy"/>}
+      </button>
     </div>
-    {tab==='chat'&&<form className="mentor-composer" onSubmit={e=>{e.preventDefault();ask();}}>{material?.text&&<label className="mentor-context"><input type="checkbox" checked={attach} onChange={e=>setAttach(e.target.checked)}/><span><b>带入：{material.title}</b><small>{material.text.slice(0,100)}</small></span></label>}<div className="mentor-modes" role="group" aria-label="教学方式">{MODES.map(([id,label])=><button type="button" key={id} aria-pressed={mode===id} className={mode===id?'active':''} onClick={()=>setMode(id)}>{label}</button>)}</div><div className="mentor-input"><textarea ref={input} aria-label="向导师提问" rows={2} value={draft} onChange={e=>setDraft(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.nativeEvent.isComposing){e.preventDefault();ask();}}} placeholder={mode==='hint'?'哪里卡住了？我先给一条提示…':'哪里不懂？用自己的话问就好…'}/><button type="submit" aria-label="请导师讲解" disabled={busy||!session||loading||(!session.demo&&connection.state!=='connected')}><Send size={17}/></button></div><small className="mentor-footnote">独立学习对话 · {session?.demo?'预设教学示范':'使用本机 Codex 额度 · 只读项目'} · Enter 发送</small></form>}
   </section>;
 }

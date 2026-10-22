@@ -4,7 +4,7 @@ import { mkdtemp, mkdir, rm, writeFile, readdir } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import assert from 'node:assert/strict';
-const root=path.resolve(process.argv[2]||'.local/releases/codex-court-1.3.0-win-x64');
+const root=path.resolve(process.argv[2]||'.local/releases/codex-court-1.3.1-win-x64');
 const temp=await mkdtemp(path.join(os.tmpdir(),'court-release-test-'));
 const base='http://127.0.0.1:4517';
 const results=path.resolve('test-results');await mkdir(results,{recursive:true});
