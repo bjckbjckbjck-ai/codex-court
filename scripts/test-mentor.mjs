@@ -23,23 +23,23 @@ try{
     const page=await context.newPage();page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error')errors.push(m.text());});
     await page.goto(base+'/?thread=training');await page.locator('.evidence-content').first().waitFor();
     await page.getByRole('button',{name:/选中证言：.*登录状态丢失/}).click();
-    await page.waitForFunction(id=>document.querySelector('audio')?.dataset.trackId===id,slowId);
-    await page.getByRole('button',{name:'关键追问',exact:true}).click();await page.waitForFunction(id=>{const a=document.querySelector('audio');return a.dataset.trackId===id&&!a.paused&&a.currentTime>.1;},fastId);
+    await page.waitForFunction(id=>document.querySelector('.court-audio')?.dataset.trackId===id,slowId);
+    await page.getByRole('button',{name:'关键追问',exact:true}).click();await page.waitForFunction(id=>{const a=document.querySelector('.court-audio');return a.dataset.trackId===id&&!a.paused&&a.currentTime>.1;},fastId);
     await page.locator('.evidence-content').first().click();await page.getByTestId('evidence-center').waitFor();
-    await page.waitForFunction(id=>document.querySelector('audio')?.dataset.trackId===id,logicId);
+    await page.waitForFunction(id=>document.querySelector('.court-audio')?.dataset.trackId===id,logicId);
     await page.getByRole('textbox',{name:'查找证据内容'}).fill('401');assert.ok(await page.locator('.evidence-inspect-surface mark').count()>0);
     await page.getByRole('button',{name:'放大证据',exact:true}).click();assert.equal(await page.locator('.evidence-inspect-toolbar output').textContent(),'115%');
     await page.screenshot({path:path.join(results,`${name}-evidence-center.png`),fullPage:true});
-    await page.getByRole('button',{name:'关闭对话框',exact:true}).click();await page.waitForFunction(id=>document.querySelector('audio')?.dataset.trackId===id,fastId);
+    await page.getByRole('button',{name:'关闭对话框',exact:true}).click();await page.waitForFunction(id=>document.querySelector('.court-audio')?.dataset.trackId===id,fastId);
     // Focus music must respect explicit pause and manual-music preferences.
     await page.getByRole('button',{name:'背景音乐设置',exact:true}).click();
     await page.getByRole('button',{name:'暂停背景音乐',exact:true}).click();
     await page.getByRole('button',{name:'关闭对话框',exact:true}).click();await page.locator('.evidence-content').first().click();
-    assert.equal(await page.locator('audio').evaluate(a=>a.paused),true);
-    await page.getByRole('button',{name:'关闭对话框',exact:true}).click();assert.equal(await page.locator('audio').evaluate(a=>a.paused),true);
+    assert.equal(await page.locator('.court-audio').evaluate(a=>a.paused),true);
+    await page.getByRole('button',{name:'关闭对话框',exact:true}).click();assert.equal(await page.locator('.court-audio').evaluate(a=>a.paused),true);
     await page.getByRole('button',{name:'背景音乐设置',exact:true}).click();await page.getByRole('button',{name:'播放背景音乐',exact:true}).click();
     await page.getByLabel('随庭审自动切换',{exact:true}).click();await page.waitForFunction(()=>!document.querySelector('.auto-music input').checked);await page.getByRole('button',{name:'关闭对话框',exact:true}).click();
-    await page.locator('.evidence-content').first().click();assert.equal(await page.locator('audio').getAttribute('data-phase'),'questioning_fast');
+    await page.locator('.evidence-content').first().click();assert.equal(await page.locator('.court-audio').getAttribute('data-phase'),'questioning_fast');
     await page.getByRole('button',{name:'关闭对话框',exact:true}).click();await page.getByRole('button',{name:'背景音乐设置',exact:true}).click();await page.getByLabel('随庭审自动切换',{exact:true}).click();await page.waitForFunction(()=>document.querySelector('.auto-music input').checked);await page.getByRole('button',{name:'关闭对话框',exact:true}).click();
     const before=(await api('/cases/training')).turns.length;
     const saved=await api('/mentor/sessions',{method:'POST',body:JSON.stringify({sourceId:'training'})});
@@ -50,7 +50,7 @@ try{
     assert.equal(await panel.getByRole('tab').count(),0,'The assistant has no complicated tabbed workspace');
     assert.equal(await api(`/mentor/sessions/${saved.session.id}`).then(r=>r.turns.length),saved.turns.length,'Opening the assistant must not send a model turn');
     assert.equal(await page.evaluate(()=>{const a=document.querySelector('.mentor-bubble').getBoundingClientRect(),b=document.querySelector('.record-panel').getBoundingClientRect();return a.right<=b.left||a.bottom<=b.top||a.top>=b.bottom;}),true,'Default speech bubble must leave the evidence sidebar clear');
-    await page.waitForFunction(id=>document.querySelector('audio')?.dataset.trackId===id,logicId);
+    await page.waitForFunction(id=>document.querySelector('.court-audio')?.dataset.trackId===id,logicId);
     await panel.getByRole('textbox',{name:'向导师提问',exact:true}).fill('项目里的状态机是什么？我还没有基础。');
     await panel.getByRole('button',{name:'请导师讲解',exact:true}).click();
     await panel.getByText('你觉得“网络请求还没回来”应该属于哪个状态？',{exact:false}).waitFor();await panel.getByRole('button',{name:'暂停',exact:true}).waitFor({state:'hidden'});
@@ -65,7 +65,7 @@ try{
     await panel.getByRole('button',{name:'继续提示',exact:true}).click();await panel.getByText('先不揭晓答案。',{exact:false}).waitFor();await panel.getByRole('button',{name:'暂停',exact:true}).waitFor({state:'hidden'});
     assert.equal(await panel.getByRole('textbox',{name:'向导师提问',exact:true}).inputValue(),'保留这个未发送的问题');
     await panel.getByRole('button',{name:'收起导师对话',exact:true}).click();await bubble.waitFor({state:'hidden'});
-    await page.waitForFunction(id=>document.querySelector('audio')?.dataset.trackId===id,fastId);
+    await page.waitForFunction(id=>document.querySelector('.court-audio')?.dataset.trackId===id,fastId);
     assert.equal(await actor.isVisible(),true);
     // Existing code approvals/history remain scoped, and a new response opens one bubble.
     await api(`/mentor/sessions/${saved.session.id}/turn`,{method:'POST',body:JSON.stringify({text:'给一点提示',mode:'hint'})});

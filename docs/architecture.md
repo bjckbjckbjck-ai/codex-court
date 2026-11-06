@@ -35,3 +35,11 @@ The 1.3.1 UI uses a small draggable character and a bounded speech bubble showin
 Audio focus is separate from the underlying courtroom phase. Evidence inspection and the expanded mentor bubble request the logic phase only when automatic music is enabled; closing them reveals the current underlying phase. A collapsed character does not request logic music. Pause and mute settings continue to apply. Fast questioning has its own slot; existing slow questioning IDs remain compatible.
 
 Windows data directory: https://learn.chatgpt.com/docs/windows/windows-app
+
+## Local voice profiles (1.4)
+
+`server/speech.mjs` stores role metadata, reference transcripts and PCM WAV references in `DATA_FILE + '.speech/'`. Profiles are atomic local records; selected text is not added to Codex threads. Browser audio decoding converts imports to mono 24 kHz WAV; the backend independently verifies size, duration, PCM format and non-silence. Imports work without a running model. Deleting the selected voice clears its selection rather than choosing a different identity silently.
+
+Authenticated same-origin speech routes proxy only fixed CosyVoice endpoints at literal loopback addresses. Redirects, credential URLs and non-loopback hosts are rejected. Bounded synthesis receives multipart reference audio and model-specific prompts, validates WAV responses or wraps official raw PCM as WAV. It has timeout, cancellation and single-request concurrency limits. The optional Python adapter uses official AutoModel methods and only binds loopback, with cross-origin protection and request limits. Model weights and Python are an optional separate installation, never part of the public release.
+
+`useSpeech` owns one player and a generation token, aborting old requests and rejecting late playback after stop. Chinese punctuation and bounded chunks are processed sequentially; audio stays in browser memory. System TTS is explicitly optional and uses only local Chinese voices. Speech pauses/ends restore the configured BGM volume without changing its saved volume or pause preference. Selection and playback controls enter the active dialog's top layer when inspecting evidence. Tests use explicit synthetic protocol fixtures, not claims of actual voice-cloning quality.

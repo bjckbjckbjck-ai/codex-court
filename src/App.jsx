@@ -9,6 +9,8 @@ import { useMusic } from './useMusic.js';
 import { PHASES } from '../shared/music.mjs';
 import { MentorPanel } from './MentorPanel.jsx';
 import { EvidenceViewer } from './EvidenceViewer.jsx';
+import { useSpeech } from './useSpeech.js';
+import { SpeechControls } from './SpeechControls.jsx';
 
 const EMPTY_RECORD = { evidence: [], examinations: [] };
 const resolutionLabels = {pending:'待复核',upheld:'维持原句',revised:'已修正',uncertain:'仍待验证'};
@@ -23,6 +25,8 @@ export default function App() {
   const terminalTurns=useRef(new Set());
   const burstTimer=useRef(), sentAction=useRef('chat');
   const music=useMusic(!!boot);
+  const speech=useSpeech(!!boot);
+  useEffect(()=>{music.setDucked(speech.playback.state==='playing');},[speech.playback.state]);
   const [mentorOpen,setMentorOpen]=useState(false),[mentorMaterial,setMentorMaterial]=useState(null),[mentorRequest,setMentorRequest]=useState(0),[mentorDialogue,setMentorDialogue]=useState(false),[fastQuestioning,setFastQuestioning]=useState(false);
   const fastRef=useRef(false);fastRef.current=fastQuestioning;
   const questioningPhase=()=>fastRef.current?'questioning_fast':'questioning';
@@ -107,7 +111,7 @@ export default function App() {
       setTurns(old=>older?mergeTurns(result.turns,old):mergeTurns(old,result.turns));setRecord(result.record);setLocked(result.locked);setActiveTurn(result.activeTurn);setPendingApprovals(result.approvals||[]);if(older||!turns.length)setHistoryCursor(result.nextCursor);
     }catch(e){setError(e.message);}
   }
-  function chooseStatement(quote) {setMentorMaterial(null);setSelected(quote);setAction('press');music.changePhase(questioningPhase(),{automatic:true});if(innerWidth>720)setRightOpen(true);composerRef.current?.focus({preventScroll:true});}
+  function chooseStatement(quote) {setMentorMaterial(null);setSelected(quote);setAction('press');music.changePhase(questioningPhase(),{automatic:true});if(innerWidth>720)setRightOpen(true);if(!window.getSelection()?.toString().trim())composerRef.current?.focus({preventScroll:true});}
   function chooseAction(next) {
     if(!selected){notify('先点击一条 Codex 证言，或划选其中的文字。');return;}
     setAction(next);if(next==='present'){setTab('evidence');music.changePhase('investigation',{automatic:true});}composerRef.current?.focus({preventScroll:true});
@@ -139,6 +143,8 @@ export default function App() {
 
   return <div className={`app-shell ${!leftOpen?'left-collapsed':''} ${!rightOpen?'right-collapsed':''}`}>
     <audio ref={music.audioRef} className="court-audio" hidden preload="metadata" aria-label="法庭背景音乐"/>
+    <audio ref={speech.audioRef} className="speech-audio" hidden preload="none" aria-label="角色朗读音频"/>
+    <SpeechControls speech={speech} contextKey={current?.id||'general'} onSettings={()=>setModal({type:'settings',tab:'speech'})}/>
     {((viewportWidth<1050&&leftOpen)||(viewportWidth<=720&&rightOpen))&&<button className="drawer-backdrop" aria-label="关闭侧栏" onClick={()=>{setLeftOpen(false);setRightOpen(false);}}/>}
     <aside className={`sidebar ${leftOpen?'open':''}`}>
       <button className="brand" onClick={home} aria-label="异议 首页"><img src="/assets/seal.svg" alt=""/><span><strong>异议<span className="brand-dot">.</span></strong><small>CODEX COURT</small></span><span className="brand-edition">01</span></button>
@@ -183,7 +189,7 @@ export default function App() {
           {error&&<div className="error-banner" role="alert"><CircleAlert size={17}/><span>{error}</span><button onClick={()=>setError('')} aria-label="关闭错误提示"><X size={14}/></button></div>}
           <div className="court-action-caption"><span>{selected?'已选中证言 · 选择你的质询方式':'先点击或划选一句 Codex 证言，再发起质询'}</span>{selected&&<b>{actionLabels[action]}</b>}</div><div className="court-actions"><button className={action==='press'?'active':''} onClick={()=>chooseAction('press')}><MessageSquareText size={17}/><strong>追问</strong><small>HOLD IT!</small></button><button className={action==='present'?'active':''} onClick={()=>chooseAction('present')}><Files size={17}/><strong>出示证据</strong><small>TAKE THAT!</small></button><button className={`objection-button ${action==='object'?'active':''}`} onClick={()=>chooseAction('object')}><Gavel size={17}/><strong>异议！</strong><small>OBJECTION!</small></button><IconButton icon={SearchCheck} label="要求验证选中的语句" className={`icon-button verify-button ${action==='verify'?'active':''}`} onClick={()=>chooseAction('verify')}/></div>
           <div className={`composer ${selected?'has-selection':''}`}>
-            {selected&&<div className="quote-strip"><Quote size={15}/><span>{selected.text}</span><button className="quote-mentor" aria-label="请导师解释选句" onClick={()=>openMentor()}><GraduationCap size={14}/>讲解</button><IconButton icon={X} label="取消选句" onClick={()=>{setSelected(null);setAction('chat');}}/></div>}
+            {selected&&<div className="quote-strip"><Quote size={15}/><span>{selected.text}</span><button className="quote-speech" aria-label="朗读选句" onClick={()=>speech.speak(selected.text)}><Volume2 size={14}/>朗读</button><button className="quote-mentor" aria-label="请导师解释选句" onClick={()=>openMentor()}><GraduationCap size={14}/>讲解</button><IconButton icon={X} label="取消选句" onClick={()=>{setSelected(null);setAction('chat');}}/></div>}
             {evidenceIds.length>0&&<div className="attached-evidence">{record.evidence.filter(e=>evidenceIds.includes(e.id)).map(e=><button key={e.id} onClick={()=>toggleEvidence(e.id)}><Paperclip size={12}/>{e.title}<X size={12}/></button>)}</div>}
             <textarea ref={composerRef} aria-label="庭审陈述" value={draft} onChange={e=>setDraft(e.target.value)} placeholder={selected?`针对这句话，补充你的${action==='object'?'异议理由':'问题'}…（可直接发送）`:'写下你的陈述，或先点击一条证言…'} onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.nativeEvent.isComposing){e.preventDefault();send();}}} rows={2}/>
             <div className="composer-footer"><div className="composer-tools"><IconButton icon={Paperclip} label="添加证据" onClick={()=>{setModal('evidence');music.changePhase('investigation',{automatic:true});}}/><span className="composer-tool-separator"/>{training?<span className="model-label"><FlaskConical size={13}/>本地演练</span>:<><select aria-label="选择模型" title="沿用原会话模型，或选择其他可用模型" value={model} onChange={e=>{setModel(e.target.value);setEffort('');}}><option value="">{current.model||'沿用会话模型'}</option>{boot?.models?.map(m=><option value={m.model} key={m.model}>{m.displayName}</option>)}</select>{chosenModel&&<select className="effort-select" aria-label="思考强度" value={effort} onChange={e=>setEffort(e.target.value)}><option value="">原强度</option>{chosenModel.supportedReasoningEfforts?.map(e=><option key={e.reasoningEffort} value={e.reasoningEffort}>{e.reasoningEffort}</option>)}</select>}</>}</div><div className="send-controls"><span className="input-hint">Shift ↵ 换行</span>{running?<button className="stop-button" onClick={stop}><Square size={13} fill="currentColor"/>暂停</button>:<button className={`send-button ${action==='object'?'red':''}`} onClick={send} disabled={sending||(!training&&connection.state!=='connected')||(action==='chat'&&!draft.trim()&&!evidenceIds.length)} aria-label={action==='chat'?'发送陈述':`发送${actionLabels[action]}`}>{sending?<LoaderCircle size={15} className="spin"/>:<ArrowUpRight size={17}/>}<span>{sending?'提交中':action==='chat'?'发送':actionLabels[action]}</span></button>}</div></div>
@@ -212,6 +218,6 @@ export default function App() {
     {modal==='new'&&<NewCase cwd={boot?.cwd||''} models={boot?.models||[]} onClose={()=>setModal(null)} onSubmit={async input=>{const r=await api('/threads',{method:'POST',body:input});await loadThreads();await openCase(r.thread.id);}}/>}
     {evidenceDetail&&<EvidenceViewer evidence={evidenceDetail} onClose={()=>setEvidenceDetail(null)} onRemove={()=>removeEvidence(evidenceDetail)} onPresent={()=>{if(!evidenceIds.includes(evidenceDetail.id))toggleEvidence(evidenceDetail.id);setEvidenceDetail(null);notify('已加入本次出示');}} onTeach={()=>{openMentor({title:evidenceDetail.title,text:evidenceDetail.kind==='image'?'请结合这张图片解释证据中的关键内容。':evidenceDetail.content,source:evidenceDetail.source,...(evidenceDetail.kind==='image'?{image:evidenceDetail.content}:{})});setEvidenceDetail(null);}}/>}
     {modal==='help'&&<Modal title="你的第一份庭审指南" kicker="HOW TO CROSS-EXAMINE" onClose={()=>setModal(null)}><div className="guide-steps"><div><span>01</span><section><h3>从一句话开始</h3><p>点选 Codex 的任意一句证言，也可以用鼠标划选其中一部分。原句会出现在输入框上方。</p></section></div><div><span>02</span><section><h3>追问，或者出示证据</h3><p>追问它的依据与前提；把截图、日志或代码收录到右侧，勾选后随质询发送。</p></section></div><div><span>03</span><section><h3>异议！让结论接受检验</h3><p>说明你发现的矛盾，点击发送异议。Codex 应根据证据维持、修正或保留判断。</p></section></div><div><span>04</span><section><h3>给这次复核留一份记录</h3><p>原证言不会被改写。右侧「质询记录」可定位新回复，并由你标记复核结果。</p></section></div></div><div className="guide-note"><Link2 size={17}/><p>真实会话沿用本机 Codex。两个客户端同时写入同一会话时，以 Codex 的占用保护为准。桌面专属插件工具不一定能在此客户端使用。</p></div><div className="modal-actions"><span className="muted">Enter 发送 · Shift + Enter 换行 · Esc 取消选句</span><button className="primary-button" onClick={()=>setModal(null)}>我准备好了<ArrowRight size={16}/></button></div></Modal>}
-    {(modal==='settings'||modal?.type==='settings')&&<CourtSettings onClose={()=>setModal(null)} initialTab={modal.tab||'performance'} music={music} sound={sound} effects={effects} setSound={value=>{setSound(value);localStorage.setItem('court:sound',String(value));if(value)playAccent('press');}} setEffects={value=>{setEffects(value);localStorage.setItem('court:effects',String(value));}} previewEffect={showEffect} connection={connection} boot={boot} reconnect={reconnect} running={running} sending={sending} release={async()=>{try{await api('/disconnect',{method:'POST',body:{}});setConnection({state:'disconnected'});setModal(null);notify('本客户端已断开，可以回到官方 Codex 继续。');}catch(e){notify(e.message);}}}/>}
+    {(modal==='settings'||modal?.type==='settings')&&<CourtSettings onClose={()=>setModal(null)} initialTab={modal.tab||'performance'} music={music} speech={speech} sound={sound} effects={effects} setSound={value=>{setSound(value);localStorage.setItem('court:sound',String(value));if(value)playAccent('press');}} setEffects={value=>{setEffects(value);localStorage.setItem('court:effects',String(value));}} previewEffect={showEffect} connection={connection} boot={boot} reconnect={reconnect} running={running} sending={sending} release={async()=>{try{await api('/disconnect',{method:'POST',body:{}});setConnection({state:'disconnected'});setModal(null);notify('本客户端已断开，可以回到官方 Codex 继续。');}catch(e){notify(e.message);}}}/>}
   </div>;
 }

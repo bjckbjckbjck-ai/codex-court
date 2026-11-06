@@ -5,15 +5,16 @@ import { api, uploadAudio } from './lib.js';
 import { PHASES, VERSIONS, MAX_AUDIO_BYTES, AUDIO_EXTENSIONS, boundTrack } from '../shared/music.mjs';
 import { EFFECTS } from './ObjectionEffect.jsx';
 import { MUSIC_SOURCES } from './music-catalog.js';
+import { SpeechSettings } from './SpeechSettings.jsx';
 
 function Switch({ label, checked, onChange, disabled }) {
   return <button className={`toggle ${checked?'on':''}`} role="switch" aria-label={label} aria-checked={checked} disabled={disabled} onClick={() => onChange(!checked)}><span/></button>;
 }
-export function CourtSettings({ onClose, initialTab = 'performance', music, sound, effects, setSound, setEffects, previewEffect, connection, boot, reconnect, running, sending, release }) {
+export function CourtSettings({ onClose, initialTab = 'performance', music, speech, sound, effects, setSound, setEffects, previewEffect, connection, boot, reconnect, running, sending, release }) {
   const [tab, setTab] = useState(initialTab);
   return <Modal title="布置你的法庭" kicker="COURT PREFERENCES" onClose={onClose} wide>
     <div className="settings-tabs" role="tablist" aria-label="法庭设置分类">
-      {[['performance','演出与连接',Sparkles],['music','背景音乐',Music2],['sources','原声目录',Disc3]].map(([id,label,Icon]) => <button key={id} role="tab" aria-selected={tab===id} onClick={() => setTab(id)}><Icon size={16}/>{label}</button>)}
+      {[['performance','演出与连接',Sparkles],['speech','角色音色',Volume2],['music','背景音乐',Music2],['sources','原声目录',Disc3]].map(([id,label,Icon]) => <button key={id} role="tab" aria-selected={tab===id} onClick={() => setTab(id)}><Icon size={16}/>{label}</button>)}
     </div>
     {tab === 'performance' && <div className="performance-settings">
       <div className="setting-row"><div><b>异议演出</b><p>发送质询时播放醒目的字卡与速度线；减少动画时保留静态字卡。</p></div><Switch label="异议演出" checked={effects} onChange={setEffects}/></div>
@@ -24,8 +25,9 @@ export function CourtSettings({ onClose, initialTab = 'performance', music, soun
       <div className="setting-info"><Link2 size={18}/><p>回到原 Codex 续聊前，结束这里的回应，再交还会话。</p></div><button className="release-button" disabled={running||sending} onClick={release}><LogOut size={15}/>交还会话给原 Codex</button>
     </div>}
     {tab === 'music' && <MusicSettings music={music}/>}
+    {tab === 'speech' && <SpeechSettings speech={speech}/>}
     {tab === 'sources' && <div className="music-sources"><p className="settings-description">按版本整理的官方入口。原声专辑与游戏内音乐鉴赏已分别标明；这里不直接播放网页音乐。取得音频文件后，在「背景音乐」中导入。</p><div className="source-grid">{MUSIC_SOURCES.map(source => <a href={source.url} key={source.title} target="_blank" rel="noreferrer noopener"><span className="source-type">{source.type}</span><strong>{source.title}<ArrowUpRight size={18}/></strong><p>{source.detail}</p><small>{new URL(source.url).hostname}</small></a>)}</div><p className="settings-footnote">来源：Capcom 官方商店及支持页面 · 整理于 2026-10-20 · 默认配乐：逆转裁判 4 · 可自行导入更多版本</p></div>}
-    <div className="settings-version">CODEX COURT · LOCAL EDITION 1.3.1</div>
+    <div className="settings-version">CODEX COURT · LOCAL EDITION 1.4.0</div>
   </Modal>;
 }
 

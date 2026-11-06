@@ -14,7 +14,7 @@ foreach ($courtItem in @('dist','server','shared','assets','docs','README.md','L
     Copy-Item -LiteralPath (Join-Path $courtRoot $courtItem) -Destination $courtOutput -Recurse
 }
 New-Item -ItemType Directory -Path (Join-Path $courtOutput 'scripts'),(Join-Path $courtOutput 'runtime'),(Join-Path $courtOutput 'licenses') | Out-Null
-foreach ($courtScript in @('runtime.ps1','setup.ps1','start.ps1','stop.ps1')) {
+foreach ($courtScript in @('runtime.ps1','setup.ps1','start.ps1','stop.ps1','cosyvoice-local.py','start-cosyvoice.ps1','setup-cosyvoice.sh')) {
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot $courtScript) -Destination (Join-Path $courtOutput 'scripts')
 }
 Copy-Item -LiteralPath $courtNode -Destination (Join-Path $courtOutput 'runtime/node.exe')

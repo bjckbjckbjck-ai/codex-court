@@ -4,7 +4,7 @@ import { mkdtemp, mkdir, rm, writeFile, readdir } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import assert from 'node:assert/strict';
-const root=path.resolve(process.argv[2]||'.local/releases/codex-court-1.3.1-win-x64');
+const root=path.resolve(process.argv[2]||'.local/releases/codex-court-1.4.0-win-x64');
 const temp=await mkdtemp(path.join(os.tmpdir(),'court-release-test-'));
 const base='http://127.0.0.1:4517';
 const results=path.resolve('test-results');await mkdir(results,{recursive:true});
@@ -17,6 +17,9 @@ const reports=[];
 try{
   for(let n=0;n<80;n++){try{if((await fetch(base+'/api/health')).ok)break;}catch{}if(n===79)throw new Error('Release server unavailable: '+log);await new Promise(r=>setTimeout(r,100));}
   const boot=await(await fetch(base+'/api/bootstrap')).json();
+  const speech=await(await fetch(base+'/api/speech',{headers:{'X-Court-Token':boot.token}})).json();
+  assert.equal(speech.voices.length,0,'Release must not contain personal voice references');assert.equal(speech.settings.engine,'cosyvoice3');
+  const releaseScripts=await readdir(path.join(root,'scripts'));for(const script of ['cosyvoice-local.py','start-cosyvoice.ps1','setup-cosyvoice.sh'])assert.ok(releaseScripts.includes(script));
   const library=await(await fetch(base+'/api/music',{headers:{'X-Court-Token':boot.token}})).json();
   assert.equal(library.tracks.length,8);assert.equal(library.settings.bindings.length,9);assert.equal(library.settings.version,'逆转裁判 4');assert.equal(library.settings.enabled,true);
   for(const [name,exe] of [['chrome','C:/Program Files/Google/Chrome/Application/chrome.exe'],['edge','C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe']]){
@@ -31,8 +34,8 @@ try{
     const tracks=[];
     for(const track of library.tracks){
       await page.getByRole('button',{name:`试听曲目：${track.title}`,exact:true}).click();
-      await page.waitForFunction(id=>{const a=document.querySelector('audio');return a?.dataset.trackId===id&&!a.paused&&a.currentTime>.12&&Number.isFinite(a.duration)&&a.duration>1;},track.id,{timeout:15000});
-      tracks.push({title:track.title,duration:await page.locator('audio').evaluate(a=>a.duration)});
+      await page.waitForFunction(id=>{const a=document.querySelector('.court-audio');return a?.dataset.trackId===id&&!a.paused&&a.currentTime>.12&&Number.isFinite(a.duration)&&a.duration>1;},track.id,{timeout:15000});
+      tracks.push({title:track.title,duration:await page.locator('.court-audio').evaluate(a=>a.duration)});
     }
     await page.screenshot({path:path.join(results,`${name}-release-music.png`),fullPage:true});
     assert.deepEqual(errors,[]);reports.push({browser:name,tracks,consoleErrors:errors});

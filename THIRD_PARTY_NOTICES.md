@@ -13,6 +13,11 @@ project. See `assets/music/NOTICE.md` for provenance and the default mapping.
 
 ## Dependencies
 
+The optional local speech integration uses [CosyVoice](https://github.com/QwenAudio/CosyVoice)
+(Apache-2.0 source) and separately downloaded model weights. Neither upstream
+source, weights nor user reference recordings are bundled in this release.
+Users install the upstream environment separately; see `docs/voice.md`.
+
 - React / React DOM — MIT.
 - Lucide — ISC; its icon files also carry their upstream notices.
 - Marked — MIT.

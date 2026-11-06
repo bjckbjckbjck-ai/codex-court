@@ -4,5 +4,6 @@ import App from './App.jsx';
 import './style.css';
 import './court-v2.css';
 import './mentor.css';
+import './speech.css';
 
 createRoot(document.getElementById('root')).render(<App />);

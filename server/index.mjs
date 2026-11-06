@@ -11,6 +11,7 @@ import { MusicStore } from './music.mjs';
 import { seedBundledMusic } from './bundled-music.mjs';
 import { MAX_AUDIO_BYTES } from '../shared/music.mjs';
 import { MentorStore, MentorService } from './mentor.mjs';
+import { SpeechStore } from './speech.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const port = Number(process.env.PORT || 4317);
@@ -20,6 +21,7 @@ const dataFile = path.resolve(process.env.DATA_FILE || path.join(root, '.local',
 const store = await new CaseStore(dataFile).load();
 const mentorStore = await new MentorStore(dataFile + '.mentor.json').load();
 const music = await new MusicStore(dataFile + '.music').load();
+const speech = await new SpeechStore(dataFile + '.speech').load();
 if (!isTest || process.env.COURT_BUNDLED_MUSIC === '1') await seedBundledMusic(music, path.join(root, 'assets', 'music'));
 const token = randomBytes(32).toString('hex');
 const clients = new Set(), loaded = new Set(), active = new Map(), approvals = new Map(), starting = new Set();
@@ -176,7 +178,7 @@ const server = http.createServer(async (req, res) => {
   res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; media-src 'self' blob:; frame-ancestors 'none'; base-uri 'none'; object-src 'none'");
   const url = new URL(req.url, `http://${expected}`), pathname = url.pathname;
   try {
-    if (pathname === '/api/health') return sendJson(res, 200, { app: 'codex-court', version: '1.3.1' });
+    if (pathname === '/api/health') return sendJson(res, 200, { app: 'codex-court', version: '1.4.0' });
     if (pathname === '/api/bootstrap' && req.method === 'GET') {
       res.setHeader('Set-Cookie', `court_session=${token}; HttpOnly; SameSite=Strict; Path=/`);
       return sendJson(res, 200, { token, connection, account, models: modelList, cwd: root, testMode: isTest, active: Object.fromEntries(active), approvals: [...approvals.values()] });
@@ -185,6 +187,20 @@ const server = http.createServer(async (req, res) => {
       const authorized = req.headers['x-court-token'] === token || req.headers.cookie?.split(';').some(c => c.trim() === `court_session=${token}`);
       if (!authorized) return sendJson(res, 401, { error: '请刷新页面重新连接' });
       if (req.method !== 'GET' && req.headers['x-court-token'] !== token) return sendJson(res, 403, { error: '缺少请求凭据，请刷新页面' });
+    }
+    if (pathname === '/api/speech' && req.method === 'GET') return sendJson(res,200,speech.snapshot());
+    if (pathname === '/api/speech/settings' && req.method === 'PATCH') return sendJson(res,200,await speech.settings(await body(req)));
+    if (pathname === '/api/speech/status' && req.method === 'GET') return sendJson(res,200,await speech.status());
+    if (pathname === '/api/speech/voices' && req.method === 'POST') return sendJson(res,200,await speech.add(await body(req)));
+    const voiceMatch=pathname.match(/^\/api\/speech\/voices\/([a-f0-9-]{36})(\/audio)?$/);
+    if(voiceMatch){
+      if(voiceMatch[2]&&req.method==='GET'){const wav=await speech.audio(voiceMatch[1]);res.writeHead(200,{'Content-Type':'audio/wav','Content-Length':wav.length,'Cache-Control':'no-store'});return res.end(wav);}
+      if(!voiceMatch[2]&&req.method==='PATCH')return sendJson(res,200,await speech.edit(voiceMatch[1],await body(req)));
+      if(!voiceMatch[2]&&req.method==='DELETE')return sendJson(res,200,await speech.remove(voiceMatch[1]));
+    }
+    if(pathname==='/api/speech/synthesize'&&req.method==='POST'){
+      const input=await body(req),abort=new AbortController(),cancel=()=>{if(!res.writableEnded)abort.abort();};res.on('close',cancel);
+      try{const wav=await speech.synthesize(input,abort.signal);if(!res.destroyed){res.writeHead(200,{'Content-Type':'audio/wav','Content-Length':wav.length,'Cache-Control':'no-store'});res.end(wav);}}finally{res.off('close',cancel);}return;
     }
     if (pathname === '/api/music' && req.method === 'GET') return sendJson(res, 200, music.snapshot());
     if (pathname === '/api/music/settings' && req.method === 'PATCH') return sendJson(res, 200, await music.settings(await body(req)));

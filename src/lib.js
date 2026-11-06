@@ -3,6 +3,10 @@ import DOMPurify from 'dompurify';
 
 let token = '';
 export function setToken(value) { token = value; }
+export async function speechAudio(text,voiceId,signal){
+  const result=await fetch('/api/speech/synthesize',{method:'POST',signal,headers:{'Content-Type':'application/json','X-Court-Token':token},body:JSON.stringify({text,voiceId})});
+  if(!result.ok){const data=await result.json();throw new Error(data.error||'语音生成失败');}return result.blob();
+}
 export async function uploadAudio(file, metadata) {
   const result = await fetch('/api/music/tracks?' + new URLSearchParams({ name: file.name, ...metadata }), { method: 'POST', headers: { 'Content-Type': 'application/octet-stream', 'X-Court-Token': token }, body: file });
   const data = await result.json();

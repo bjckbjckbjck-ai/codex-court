@@ -3,6 +3,12 @@ dist/
 .generated/
 .local/
 *.mentor.json
+*.speech/
+pretrained_models/
+voice-recordings/
+*.safetensors
+*.pt
+__pycache__/
 test-results/
 *.log
 key.txt

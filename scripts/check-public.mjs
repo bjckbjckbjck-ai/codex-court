@@ -21,6 +21,7 @@ const rules=[
 let bytes=0;
 for(const {file,mode} of files){
   if(mode!=='100644'&&mode!=='100755')failures.push({file,rule:'unsupported file mode'});
+  if(/\.speech(?:\/|$)|(^|\/)(?:pretrained_models|voice-recordings)(?:\/|$)|\.(?:safetensors|pt)$/i.test(file))failures.push({file,rule:'private voice reference or model weights'});
   if(!allowedFiles.has(file)&&!allowedRoots.has(file.split('/')[0]))failures.push({file,rule:'outside public allowlist'});
   if(/(^|\/)(?:\.local|\.codex|node_modules|test-results|sessions|archived_sessions|runtime|dist)(\/|$)|(?:^|\/)(?:key\.txt|auth\.json|config\.toml|\.env[^/]*|\.npmrc)$|\.(?:log|jsonl|db|sqlite|pem|key|zip)$/i.test(file))failures.push({file,rule:'private/generated file'});
   const data=git('show',`:${file}`);bytes+=data.length;

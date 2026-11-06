@@ -7,6 +7,7 @@ export function useMusic(ready) {
   const [library, setLibrary] = useState({ tracks: [], settings: structuredClone(DEFAULT_MUSIC_SETTINGS) });
   const [phase, setPhase] = useState('recess'), [previewId, setPreviewId] = useState(null), [paused, setPaused] = useState(false);
   const [focusPhase,setFocusPhase] = useState(null);
+  const [ducked,setDucked]=useState(false),duckRef=useRef(false);duckRef.current=ducked;
   const audiblePhase = library.settings.auto && focusPhase ? focusPhase : phase;
   const [playback, setPlayback] = useState({ state: 'off', title: '' }), [error, setError] = useState('');
   const audioRef = useRef(null), config = useRef(library.settings), phaseTimer = useRef(), fadeTimer = useRef(), revision = useRef(0), mutations = useRef(Promise.resolve());
@@ -46,7 +47,7 @@ export function useMusic(ready) {
   const retry = useCallback(() => {
     const audio = audioRef.current;
     if (!audio?.getAttribute('src')) return;
-    audio.volume = config.current.volume;
+    audio.volume = config.current.volume*(duckRef.current?0.22:1);
     audio.play().then(() => setPlayback(value => ({ ...value, state: 'playing' }))).catch(() => setPlayback(value => ({ ...value, state: 'blocked' })));
   }, []);
 
@@ -81,16 +82,16 @@ export function useMusic(ready) {
       update('loading');
       audio.play().then(() => {
         if (revision.current !== serial) return;
-        update('playing'); ramp(0, library.settings.volume, 240);
+        update('playing'); ramp(0, library.settings.volume*(ducked?0.22:1), 240);
       }).catch(e => { if (revision.current === serial && e.name !== 'AbortError') update(e.name === 'NotAllowedError' ? 'blocked' : 'error'); });
     };
     const failed = () => update('error');
     audio.addEventListener('error', failed);
-    if (audio.dataset.trackId === track.id && !audio.paused) { audio.volume = library.settings.volume; update('playing'); }
+    if (audio.dataset.trackId === track.id && !audio.paused) { audio.volume = library.settings.volume*(ducked?0.22:1); update('playing'); }
     else if (!audio.paused) ramp(audio.volume, 0, 180, () => { audio.pause(); start(); });
     else start();
     return () => { if (fading) clearInterval(fadeTimer.current); audio.removeEventListener('error', failed); };
-  }, [library, audiblePhase, previewId, paused]);
+  }, [library, audiblePhase, previewId, paused, ducked]);
 
-  return { library, setLibrary, phase:audiblePhase, basePhase:phase, setFocusPhase, changePhase, clearScheduled, previewId, preview, endPreview, paused, setPaused, playback, error, setError, updateSettings, toggle, retry, audioRef };
+  return { library, setLibrary, phase:audiblePhase, basePhase:phase, setFocusPhase, setDucked, changePhase, clearScheduled, previewId, preview, endPreview, paused, setPaused, playback, error, setError, updateSettings, toggle, retry, audioRef };
 }
