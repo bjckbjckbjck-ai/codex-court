@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Scale, Plus, Search, ArrowUpRight, ArrowRight, RefreshCw, FolderOpen, Files, BookOpen, Gavel, CircleHelp, Volume2, VolumeX, Settings2, ChevronRight, ChevronLeft, ChevronDown, FileText, Image, Quote, Check, X, MoreHorizontal, Send, Square, Paperclip, Download, Archive, Clock3, ShieldCheck, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Sparkles, MessageSquareText, Target, Link2, Copy, Trash2, FlaskConical, CircleAlert, LogOut, CornerDownLeft, LoaderCircle, CheckCheck, ExternalLink, ListChecks, SearchCheck } from 'lucide-react';
-import { api, setToken, updateTurn, mergeTurns, dateLabel, playAccent, actionLabels, markdown } from './lib.js';
+import { blocks, plain, api, setToken, updateTurn, mergeTurns, dateLabel, playAccent, actionLabels, markdown } from './lib.js';
 import { IconButton, Modal, EvidenceForm, Message, ToolActivity, ApprovalCard, NewCase } from './components.jsx';
 import { Music2, GraduationCap, Zap } from 'lucide-react';
 import { CourtSettings } from './CourtSettings.jsx';
@@ -35,6 +35,32 @@ export default function App() {
   useEffect(()=>{music.setFocusPhase(evidenceDetail||(mentorOpen&&mentorDialogue)?'logic':null);},[!!evidenceDetail,mentorOpen,mentorDialogue]);
   function openMentor(material=null){setMentorMaterial(material);setMentorOpen(true);setMentorRequest(n=>n+1);}
   const running=!!activeTurn, training=current?.id==='training';
+  const [testifying,setTestifying]=useState(false), [cardKey,setCardKey]=useState('');
+  const cards=React.useMemo(()=>{
+    if(!testifying)return [];
+    const entries=new Map();
+    const revisions=new Map(record.examinations.filter(e=>Number.isInteger(e.quote?.blockIndex)).map(e=>[e.turnId,e]));
+    for(const turn of turns){
+      if(turn.status!=='completed')continue;
+      const answers=turn.items.filter(i=>i.type==='agentMessage'&&i.phase!=='commentary'&&i.text?.trim());
+      const revision=revisions.get(turn.id);
+      if(revision){
+        const answer=answers.at(-1);
+        if(answer){
+          const {itemId,turnId,blockIndex}=revision.quote;
+          const key=itemId+':'+blockIndex;
+          entries.set(key,{key,itemId,turnId,blockIndex,text:answer.text,revised:true});
+        }
+      }else for(const item of answers){
+        blocks(item.text).forEach((block,blockIndex)=>{
+          const key=item.id+':'+blockIndex;
+          entries.set(key,{key,itemId:item.id,turnId:turn.id,blockIndex,text:plain(block.raw)});
+        });
+      }
+    }
+    return [...entries.values()];
+  },[testifying,turns,record.examinations]);
+  const cardIndex=Math.max(0,cards.findIndex(c=>c.key===cardKey)), card=cards[cardIndex];
   const chosenModel=(boot?.models||[]).find(m=>m.model===(model||current?.model));
   function showEffect(kind, force=false) {
     if(sound)playAccent(kind);
@@ -96,7 +122,7 @@ export default function App() {
 
   async function openCase(id) {
     setMentorMaterial(null);setFastQuestioning(false);fastRef.current=false;
-    const serial=++openSerial.current;currentRef.current=id;setLoading(true);setError('');setSelected(null);setAction('chat');setEvidenceIds([]);setDraft('');setTurns([]);setRecord(EMPTY_RECORD);setActiveTurn(null);setPendingApprovals([]);setModel('');setEffort('');stickBottom.current=true;
+    const serial=++openSerial.current;currentRef.current=id;setLoading(true);setError('');setSelected(null);setAction('chat');setEvidenceIds([]);setDraft('');setTurns([]);setRecord(EMPTY_RECORD);setActiveTurn(null);setPendingApprovals([]);setTestifying(false);setCardKey('');setModel(localStorage.getItem('court:model:'+id)||'');setEffort('');stickBottom.current=true;
     try {
       const result=await api(`/cases/${id}`);if(serial!==openSerial.current)return;
       setCurrent(result.thread);setTurns(result.turns);setHistoryCursor(result.nextCursor);setRecord(result.record);setLocked(result.locked);setActiveTurn(result.activeTurn);setPendingApprovals(result.approvals||[]);
@@ -113,7 +139,8 @@ export default function App() {
   }
   function chooseStatement(quote) {setMentorMaterial(null);setSelected(quote);setAction('press');music.changePhase(questioningPhase(),{automatic:true});if(innerWidth>720)setRightOpen(true);if(!window.getSelection()?.toString().trim())composerRef.current?.focus({preventScroll:true});}
   function chooseAction(next) {
-    if(!selected){notify('先点击一条 Codex 证言，或划选其中的文字。');return;}
+    if(testifying&&card)setSelected(card);
+    if(!(testifying?card:selected)){notify('先点击一条 Codex 证言，或划选其中的文字。');return;}
     setAction(next);if(next==='present'){setTab('evidence');music.changePhase('investigation',{automatic:true});}composerRef.current?.focus({preventScroll:true});
   }
   async function send() {
@@ -126,7 +153,7 @@ export default function App() {
     if(sendingAction!=='chat')showEffect(sendingAction);
     music.changePhase(({chat:'thinking',press:questioningPhase(),present:'investigation',verify:'investigation',object:'objection'})[sendingAction],{automatic:true,...(sendingAction==='object'?{after:'pursuit'}:{})});
     try {
-      const result=await api(`/cases/${id}/turn`,{method:'POST',body:{text:draft,action,quote:selected,evidenceIds,model,effort}});
+      const result=await api(`/cases/${id}/turn`,{method:'POST',body:{text:draft,action,quote:testifying&&action!=='chat'?card:selected,evidenceIds,model,effort}});
       if(currentRef.current!==id)return;
       setTurns(old=>mergeTurns(old,[result.turn]));setRecord(result.record);setActiveTurn(result.turn.status==='inProgress'&&!terminalTurns.current.has(result.turn.id)?result.turn.id:null);setDraft('');setEvidenceIds([]);setSelected(null);setAction('chat');setLocked(false);
     }catch(e){setError(e.message);clearTimeout(burstTimer.current);setBurst(null);music.changePhase('questioning',{automatic:true});}finally{setSending(false);}
@@ -176,23 +203,24 @@ export default function App() {
         <div className="welcome-foot"><ShieldCheck size={17}/><span>证据本地保存</span><span className="dot-separator">·</span><span>无需迁移会话</span><span className="dot-separator">·</span><span>无需额外 API Key</span></div>
         {error&&<div className="error-banner"><CircleAlert size={17}/>{error}<button onClick={()=>setError('')}><X size={14}/></button></div>}
       </div></div>:<>
-        <div className="transcript-heading"><span><span className="live-square"/> 庭审实录</span><span className="transcript-subtitle">{training?'预设演练 · 所有回复均为本地示例':'与原 Codex 共用这份会话'}</span><div className="transcript-controls"><IconButton icon={RefreshCw} label="刷新当前会话" onClick={()=>reloadCurrent()}/><span className="record-label">ON THE RECORD</span></div></div>
+        <div className="transcript-heading"><span><span className="live-square"/> {testifying?'证人证言':'庭审实录'}</span><span className="transcript-subtitle">{training?'预设演练 · 所有回复均为本地示例':'与原 Codex 共用这份会话'}</span><div className="transcript-controls"><button className="small-button" aria-pressed={testifying} onClick={()=>{setTestifying(!testifying);setSelected(null);setAction('chat');}}>{testifying?'切回对话':'证言模式'}</button><IconButton icon={RefreshCw} label="刷新当前会话"  onClick={()=>reloadCurrent()}/><span className="record-label">ON THE RECORD</span></div></div>
         <div className="transcript" ref={scrollRef} onScroll={e=>{const el=e.currentTarget;stickBottom.current=el.scrollHeight-el.scrollTop-el.clientHeight<90;}}>
           {historyCursor&&<button className="earlier-button" onClick={()=>{stickBottom.current=false;reloadCurrent(true);}}><Clock3 size={14}/>调阅更早的记录<ChevronDown size={13}/></button>}
           {locked&&<div className="lock-note"><Link2 size={15}/><span>原 Codex 窗口可能仍持有此会话。可以浏览；发送时会检查占用状态。</span></div>}
           {!turns.length&&<div className="empty-transcript"><Scale size={37}/><h3>法庭已就绪</h3><p>说说你的问题，Codex 将在这里回应。<br/>随后你可以点选任何一句证言，继续追问。</p></div>}
-          {turns.map(turn=><section className="turn" id={'turn-'+turn.id} key={turn.id}>{turn.items.filter(i=>['userMessage','agentMessage'].includes(i.type)).map(item=><Message key={item.id} item={item} turnId={turn.id} selected={selected} onSelect={chooseStatement} examinations={record.examinations} onCopy={copy}/>)}<ToolActivity items={turn.items}/>{turn.status==='failed'&&<div className="turn-error">本轮未完成：{turn.error?.message||'请稍后重试'}</div>}{turn.status==='interrupted'&&<div className="interrupted-label">此轮已暂停</div>}</section>)}
+          {testifying&&<div className="witness-stage"><div className="witness-caption">●　证人证言</div>{card?<div className="witness-box"><b>证言席 · Codex {card.revised&&' · 已更新'}</b><div className="message-content" aria-live="polite">{card.text}</div><nav>{[-1,1].map(step=><button className="small-button" key={step} disabled={!cards[cardIndex+step]||running||sending} onClick={()=>{setCardKey(cards[cardIndex+step].key);setSelected(null);setAction('chat');}}>{step<0?'◀ 上一条':'下一条 ▶'}</button>)}<span>{cardIndex+1} / {cards.length}</span></nav></div>:<p>等待 Codex 完成第一份证言。</p>}</div>}
+          {!testifying&&turns.map(turn=><section className="turn" id={'turn-'+turn.id} key={turn.id}>{turn.items.filter(i=>['userMessage','agentMessage'].includes(i.type)).map(item=><Message key={item.id} item={item} turnId={turn.id} selected={selected} onSelect={chooseStatement} examinations={record.examinations} onCopy={copy}/>)}<ToolActivity items={turn.items}/>{turn.status==='failed'&&<div className="turn-error">本轮未完成：{turn.error?.message||'请稍后重试'}</div>}{turn.status==='interrupted'&&<div className="interrupted-label">此轮已暂停</div>}</section>)}
           {pendingApprovals.map(request=><ApprovalCard request={request} key={request.id} onResolve={async(id,input)=>{await api(`/approvals/${id}`,{method:'POST',body:input});setPendingApprovals(old=>old.filter(a=>a.id!==id));}}/>)}
           {running&&<div className="running-label"><span className="thinking"><i/><i/><i/></span>Codex 正在调查与回应…</div>}
         </div>
         <div className={`composer-area action-${action}`}>
           {error&&<div className="error-banner" role="alert"><CircleAlert size={17}/><span>{error}</span><button onClick={()=>setError('')} aria-label="关闭错误提示"><X size={14}/></button></div>}
-          <div className="court-action-caption"><span>{selected?'已选中证言 · 选择你的质询方式':'先点击或划选一句 Codex 证言，再发起质询'}</span>{selected&&<b>{actionLabels[action]}</b>}</div><div className="court-actions"><button className={action==='press'?'active':''} onClick={()=>chooseAction('press')}><MessageSquareText size={17}/><strong>追问</strong><small>HOLD IT!</small></button><button className={action==='present'?'active':''} onClick={()=>chooseAction('present')}><Files size={17}/><strong>出示证据</strong><small>TAKE THAT!</small></button><button className={`objection-button ${action==='object'?'active':''}`} onClick={()=>chooseAction('object')}><Gavel size={17}/><strong>异议！</strong><small>OBJECTION!</small></button><IconButton icon={SearchCheck} label="要求验证选中的语句" className={`icon-button verify-button ${action==='verify'?'active':''}`} onClick={()=>chooseAction('verify')}/></div>
+          <div className="court-action-caption"><span>{testifying&&card?'对当前证言进行质询':selected?'已选中证言 · 选择你的质询方式':'先点击或划选一句 Codex 证言，再发起质询'}</span>{selected&&<b>{actionLabels[action]}</b>}</div><div className="court-actions"><button className={action==='press'?'active':''} onClick={()=>chooseAction('press')}><MessageSquareText size={17}/><strong>追问</strong><small>HOLD IT!</small></button><button className={action==='present'?'active':''} onClick={()=>chooseAction('present')}><Files size={17}/><strong>出示证据</strong><small>TAKE THAT!</small></button><button className={`objection-button ${action==='object'?'active':''}`} onClick={()=>chooseAction('object')}><Gavel size={17}/><strong>异议！</strong><small>OBJECTION!</small></button><IconButton icon={SearchCheck} label="要求验证选中的语句" className={`icon-button verify-button ${action==='verify'?'active':''}`} onClick={()=>chooseAction('verify')}/></div>
           <div className={`composer ${selected?'has-selection':''}`}>
             {selected&&<div className="quote-strip"><Quote size={15}/><span>{selected.text}</span><button className="quote-speech" aria-label="朗读选句" onClick={()=>speech.speak(selected.text)}><Volume2 size={14}/>朗读</button><button className="quote-mentor" aria-label="请导师解释选句" onClick={()=>openMentor()}><GraduationCap size={14}/>讲解</button><IconButton icon={X} label="取消选句" onClick={()=>{setSelected(null);setAction('chat');}}/></div>}
             {evidenceIds.length>0&&<div className="attached-evidence">{record.evidence.filter(e=>evidenceIds.includes(e.id)).map(e=><button key={e.id} onClick={()=>toggleEvidence(e.id)}><Paperclip size={12}/>{e.title}<X size={12}/></button>)}</div>}
             <textarea ref={composerRef} aria-label="庭审陈述" value={draft} onChange={e=>setDraft(e.target.value)} placeholder={selected?`针对这句话，补充你的${action==='object'?'异议理由':'问题'}…（可直接发送）`:'写下你的陈述，或先点击一条证言…'} onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.nativeEvent.isComposing){e.preventDefault();send();}}} rows={2}/>
-            <div className="composer-footer"><div className="composer-tools"><IconButton icon={Paperclip} label="添加证据" onClick={()=>{setModal('evidence');music.changePhase('investigation',{automatic:true});}}/><span className="composer-tool-separator"/>{training?<span className="model-label"><FlaskConical size={13}/>本地演练</span>:<><select aria-label="选择模型" title="沿用原会话模型，或选择其他可用模型" value={model} onChange={e=>{setModel(e.target.value);setEffort('');}}><option value="">{current.model||'沿用会话模型'}</option>{boot?.models?.map(m=><option value={m.model} key={m.model}>{m.displayName}</option>)}</select>{chosenModel&&<select className="effort-select" aria-label="思考强度" value={effort} onChange={e=>setEffort(e.target.value)}><option value="">原强度</option>{chosenModel.supportedReasoningEfforts?.map(e=><option key={e.reasoningEffort} value={e.reasoningEffort}>{e.reasoningEffort}</option>)}</select>}</>}</div><div className="send-controls"><span className="input-hint">Shift ↵ 换行</span>{running?<button className="stop-button" onClick={stop}><Square size={13} fill="currentColor"/>暂停</button>:<button className={`send-button ${action==='object'?'red':''}`} onClick={send} disabled={sending||(!training&&connection.state!=='connected')||(action==='chat'&&!draft.trim()&&!evidenceIds.length)} aria-label={action==='chat'?'发送陈述':`发送${actionLabels[action]}`}>{sending?<LoaderCircle size={15} className="spin"/>:<ArrowUpRight size={17}/>}<span>{sending?'提交中':action==='chat'?'发送':actionLabels[action]}</span></button>}</div></div>
+            <div className="composer-footer"><div className="composer-tools"><IconButton icon={Paperclip} label="添加证据" onClick={()=>{setModal('evidence');music.changePhase('investigation',{automatic:true});}}/><span className="composer-tool-separator"/>{training?<span className="model-label"><FlaskConical size={13}/>本地演练</span>:<><select aria-label="选择模型" title="沿用原会话模型，或选择其他可用模型" value={model} onChange={e=>{localStorage.setItem('court:model:'+current.id,e.target.value);setModel(e.target.value);setEffort('');}}><option value="">{current.model||'沿用会话模型'}</option>{boot?.models?.map(m=><option value={m.model} key={m.model}>{m.displayName}</option>)}</select>{chosenModel&&<select className="effort-select" aria-label="思考强度" value={effort} onChange={e=>setEffort(e.target.value)}><option value="">原强度</option>{chosenModel.supportedReasoningEfforts?.map(e=><option key={e.reasoningEffort} value={e.reasoningEffort}>{e.reasoningEffort}</option>)}</select>}</>}</div><div className="send-controls"><span className="input-hint">Shift ↵ 换行</span>{running?<button className="stop-button" onClick={stop}><Square size={13} fill="currentColor"/>暂停</button>:<button className={`send-button ${action==='object'?'red':''}`} onClick={send} disabled={sending||(!training&&connection.state!=='connected')||(action==='chat'&&!draft.trim()&&!evidenceIds.length)} aria-label={action==='chat'?'发送陈述':`发送${actionLabels[action]}`}>{sending?<LoaderCircle size={15} className="spin"/>:<ArrowUpRight size={17}/>}<span>{sending?'提交中':action==='chat'?'发送':actionLabels[action]}</span></button>}</div></div>
           </div><div className="composer-bottom"><span><span className="tiny-dot"/> {selected?'已选中证言 · 原文将随质询一起发送':'点击证言即可追问，也可划选其中一部分'}</span><span>判断来自证据。</span></div>
         </div>
       </>}

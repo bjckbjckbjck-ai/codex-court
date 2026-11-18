@@ -77,7 +77,7 @@ function connect() {
     });
     try {
       await rpc.connect();
-      const results = await Promise.allSettled([rpc.call('account/read', { refreshToken: false }), rpc.call('model/list', {})]);
+      const results = await Promise.allSettled([rpc.call('account/read', { refreshToken: false }), availableModels()]);
       account = results[0].status === 'fulfilled' ? { type: results[0].value.account?.type || null, plan: results[0].value.account?.planType || null } : null;
       modelList = results[1].status === 'fulfilled' ? results[1].value.data.filter(m => !m.hidden) : [];
       connection = { state: 'connected' }; broadcast({ type: 'connection', connection });
@@ -87,6 +87,25 @@ function connect() {
 }
 const mentor = new MentorService({store:mentorStore,native,root,isTest,loaded,active,starting,finishedTurns,broadcast,history,cleanTurn,approvals});
 void connect();
+
+async function availableModels() {
+  const models=new Map(), cursors=new Set();
+  let cursor;
+  do {
+    const page=await rpc.call('model/list',cursor?{cursor}:{});
+    for(const m of page.data) models.set(m.model,m);
+    cursor=page.nextCursor;
+    if(cursors.has(cursor))break;
+    cursors.add(cursor);
+  } while(cursor);
+  try {
+    const cache=JSON.parse(await readFile(path.join(process.env.CODEX_HOME||path.join(os.homedir(),'.codex'),'models_cache.json'),'utf8'));
+    for(const m of cache.models) if(m.visibility==='list'&&!models.has(m.slug)){
+      models.set(m.slug,{model:m.slug,displayName:m.display_name||m.slug,supportedReasoningEfforts:(m.supported_reasoning_levels||[]).map(r=>({reasoningEffort:r.effort}))});
+    }
+  } catch {}
+  return {data:[...models.values()]};
+}
 
 async function native() { if (connectPromise) await connectPromise; if (connection.state !== 'connected') throw Object.assign(new Error(connection.detail || 'Codex 尚未连接'), { status: 503 }); return rpc; }
 async function locked(id) {
@@ -119,7 +138,7 @@ async function runTurn(id, input) {
     if (evidence.length > 8) throw new Error('每次最多出示 8 份证据');
     const action = input.action || 'chat';
     const text = String(input.text || '').slice(0, 100_000);
-    const quote = input.quote ? { text: String(input.quote.text || '').slice(0, 30_000), itemId: String(input.quote.itemId || ''), turnId: String(input.quote.turnId || '') } : null;
+    const quote = input.quote ? { text: String(input.quote.text || '').slice(0, 30_000), itemId: String(input.quote.itemId || ''), turnId: String(input.quote.turnId || ''), ...(Number.isSafeInteger(input.quote.blockIndex)&&input.quote.blockIndex>=0?{blockIndex:input.quote.blockIndex}:{}) } : null;
     const messages = buildInput({ text, action, quote, evidence });
     const clientId = randomUUID();
     let turn;
